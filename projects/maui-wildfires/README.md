@@ -16,6 +16,10 @@ The analysis integrates:
 
 to evaluate wildfire extent, environmental damage, population exposure, and post-fire ecosystem recovery.
 
+# Project Presentation
+
+📄 [Download Project Presentation](Maui_Fires_12.04.24.pdf)
+
 ---
 
 # Why This Matters
