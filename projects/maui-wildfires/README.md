@@ -206,7 +206,28 @@ The animation demonstrates temporal vegetation dynamics throughout the recovery 
 # Project Impact
 
 This project demonstrates how cloud-based geospatial analytics and Earth Observation data can support rapid disaster assessment workflows that are scalable, reproducible, and actionable for emergency management agencies, environmental organizations, and policy makers.
+---
 
+# Project Presentation
+
+A detailed presentation describing the project background, methodology, datasets, analytical workflow, results, and key findings is available below.
+
+📄 **Presentation Slides**
+
+[⬇ Download Project Presentation](Maui_Fires_12.04.24.pdf)
+
+The presentation includes:
+
+- Wildfire background and motivation
+- Maui wildfire case study
+- Sentinel-2 data processing workflow
+- Burn severity assessment
+- Land-cover impact analysis
+- Population exposure assessment
+- NDVI recovery monitoring
+- Key findings and conclusions
+
+---
 ---
 
 # Author
