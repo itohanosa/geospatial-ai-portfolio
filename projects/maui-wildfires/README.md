@@ -1,185 +1,218 @@
-# Maui Wildfires: Burned Area, Vegetation Recovery, Population Exposure, and Land-Cover Impact
+# Maui Wildfires 2023: Geospatial Intelligence for Burn Severity, Population Exposure, and Ecosystem Recovery
 
-This project analyzes the spatial and environmental impacts of the Maui wildfires using geospatial visualization, burned-area mapping, vegetation monitoring, and exposure analysis. The project focuses on identifying wildfire-affected areas, observing vegetation recovery through NDVI, and visualizing impacts on population, cropland, and grassland areas.
+## Project Summary
 
----
+The August 2023 Maui wildfires were among the deadliest and most destructive wildfire events in modern U.S. history. Rapid assessment of wildfire impacts is critical for emergency response, environmental monitoring, recovery planning, and long-term resilience.
 
-## Project Overview
+This project demonstrates a cloud-based geospatial intelligence workflow developed in Google Earth Engine to quantify wildfire impacts using satellite imagery, land-cover datasets, and population estimates.
 
-The Maui wildfires caused severe environmental, social, and economic impacts. This project uses geospatial data and visual outputs to communicate where the fires occurred, how burned areas changed, and which land-cover and population groups were affected.
+The analysis integrates:
 
-The analysis includes:
+- Sentinel-2 multispectral imagery
+- ESA WorldCover land-cover data
+- WorldPop population estimates
+- Time-series vegetation monitoring
+- Burn severity assessment
 
-- Wildfire occurrence and burned-area visualization
-- Maui area of interest mapping
-- Burned-area mapping
-- NDVI-based vegetation recovery monitoring
-- Population exposure assessment
-- Cropland impact assessment
-- Grassland impact assessment
-- Cost and impact visualization
+to evaluate wildfire extent, environmental damage, population exposure, and post-fire ecosystem recovery.
 
 ---
 
-## Study Area: Maui, Hawaii
+# Why This Matters
 
-The project begins by defining the Maui area of interest. This map shows the selected study boundary used for the wildfire analysis.
+Wildfires are increasing in frequency, duration, and severity due to climate change, prolonged drought conditions, and land-use pressures.
+
+Decision makers require rapid and scalable methods to answer critical questions:
+
+- How much land was burned?
+- Which land-cover classes were affected?
+- How many people were exposed?
+- How quickly is vegetation recovering?
+- What are the potential long-term impacts?
+
+This project demonstrates how Earth Observation can support evidence-based disaster management.
+
+---
+
+# Historical Wildfire Activity
+
+To provide context, wildfire occurrence across the United States, Alaska, and Hawaii was analyzed using historical wildfire records.
+
+🎥 **Animation**
+
+[View Historical Wildfire Animation](figures/Fires_2016_2023.mp4)
+
+The animation highlights the increasing spatial extent and frequency of wildfire events across North America.
+
+---
+
+# Study Area
+
+The analysis focuses on Maui County, Hawaii, including Maui, Molokai, and Lanai.
+
+Maui experienced extensive wildfire damage during August 2023, particularly around Lahaina and surrounding communities.
 
 <p align="center">
-  <img src="figures/maui_aoi_ll.png" alt="Maui Area of Interest" width="850">
+<img src="figures/maui_aoi_II.png" width="800">
 </p>
 
-The area of interest provides the spatial boundary for subsequent burned-area, vegetation, and impact analyses.
+*Figure 1. Study area showing Maui County and surrounding islands.*
 
 ---
 
-## Methodological Workflow
+# Analytical Framework
 
-The workflow below summarizes the major steps followed in this project, from data collection and preprocessing to wildfire mapping, impact assessment, and visualization.
+A cloud-based workflow was implemented within Google Earth Engine.
+
+The workflow consists of:
+
+1. Satellite image acquisition
+2. Pre-processing and cloud masking
+3. Burn severity assessment
+4. Population exposure estimation
+5. Land-cover impact analysis
+6. Vegetation recovery monitoring
 
 <p align="center">
-  <img src="figures/flowchart.png" alt="Project Workflow" width="850">
+<img src="figures/flowchart.png" width="900">
 </p>
 
-The workflow helps explain how wildfire data, satellite-derived vegetation information, and exposure layers were combined to produce the final outputs.
+*Figure 2. End-to-end wildfire assessment workflow.*
 
 ---
 
-## Wildfires Across the United States, Alaska, and Hawaii
+# Burn Severity Assessment
 
-This animation shows wildfire activity from 2016 to 2023 across the United States, including Alaska and Hawaii. It provides broader context before focusing specifically on Maui.
+Burned areas were identified using spectral change detection techniques derived from Sentinel-2 imagery.
+
+Results indicate approximately:
+
+# 7,174 hectares burned
+
+across Maui County during the wildfire event.
 
 <p align="center">
-  <video src="figures/Fires_2016_2023.mp4" width="850" controls>
-    Your browser does not support the video tag.
-  </video>
+<img src="figures/burnt areas.png" width="900">
 </p>
 
-If the video does not display directly on GitHub, download or open the file here:
-
-[View Fires_2016_2023.mp4](figures/Fires_2016_2023.mp4)
-
-This national-scale visualization helps place the Maui wildfire event within a broader wildfire pattern across the United States.
+*Figure 3. Burned area distribution across Maui County.*
 
 ---
 
-## Burned Areas in Maui
+# Land-Cover Impact Assessment
 
-The burned-area map identifies locations affected by wildfire within the Maui study area.
+Understanding which ecosystems are most affected is critical for ecological recovery planning.
+
+Results indicate that grassland represented the dominant affected land-cover category.
 
 <p align="center">
-  <img src="figures/burnt%20areas.png" alt="Burned Areas in Maui" width="850">
+<img src="figures/affected grassland.png" width="850">
 </p>
 
-The burned-area layer is central to the project because it defines the spatial footprint used to estimate environmental and human impacts.
+*Figure 4. Grassland represented the most impacted land-cover class.*
 
 ---
 
-## NDVI-Based Vegetation Recovery
+# Population Exposure Assessment
 
-The NDVI animation shows vegetation condition and recovery after the wildfire event. NDVI is useful for tracking vegetation stress, damage, and regrowth over time.
+Wildfire impacts extend beyond ecosystems and directly affect human populations.
+
+Combining wildfire extent with WorldPop estimates suggests that approximately:
+
+# 160,000 people
+
+were potentially exposed to wildfire impacts.
 
 <p align="center">
-  <video src="figures/NDVI.mp4" width="850" controls>
-    Your browser does not support the video tag.
-  </video>
+<img src="figures/affected pop.png" width="850">
 </p>
 
-If the video does not display directly on GitHub, download or open the file here:
-
-[View NDVI.mp4](figures/NDVI.mp4)
-
-This animation helps show how vegetation changed after the wildfire and whether affected areas began to recover.
+*Figure 6. Spatial distribution of population exposure.*
 
 ---
 
-## Population Affected by the Wildfires
+# Economic Impact
 
-This map shows areas where population exposure overlapped with wildfire-affected zones.
+Wildfires generate substantial economic losses through destruction of homes, infrastructure, businesses, and ecosystem services.
 
-<p align="center">
-  <img src="figures/affected%20pop.png" alt="Affected Population" width="850">
-</p>
+🎥 **Economic Impact Animation**
 
-The population exposure map highlights the human dimension of the wildfire impact. It helps identify communities that may have been directly or indirectly affected by the burned areas.
+[View Economic Impact Animation](figures/cost of wildfires_with name.mp4)
 
----
-
-## Cropland Affected by the Wildfires
-
-This map shows cropland areas affected by the Maui wildfires.
-
-<p align="center">
-  <img src="figures/affected%20cropland.png" alt="Affected Cropland" width="850">
-</p>
-
-The cropland impact layer helps assess potential agricultural damage and the effect of wildfire on productive land.
+This animation summarizes the economic consequences associated with major wildfire events.
 
 ---
 
-## Grassland Affected by the Wildfires
+# Vegetation Recovery Analysis
 
-This map shows grassland areas affected by the wildfire event.
+To evaluate ecosystem resilience and post-fire recovery, NDVI time-series analysis was conducted.
 
-<p align="center">
-  <img src="figures/grassland.png" alt="Affected Grassland" width="850">
-</p>
+Vegetation indices reveal significant declines immediately following the wildfire event followed by gradual recovery over time.
 
-Grassland areas are important because they can influence fire spread, post-fire recovery, and future wildfire vulnerability.
+🎥 **NDVI Recovery Animation**
 
----
+[View NDVI Recovery Animation](figures/NDVI.mp4)
 
-## Economic Cost and Wildfire Impact
-
-This animation presents the cost and broader impact of wildfires.
-
-<p align="center">
-  <video src="figures/cost%20of%20wildfires_with_name.mp4" width="850" controls>
-    Your browser does not support the video tag.
-  </video>
-</p>
-
-If the video does not display directly on GitHub, download or open the file here:
-
-[View cost of wildfires_with_name.mp4](figures/cost%20of%20wildfires_with_name.mp4)
-
-This visualization connects the physical wildfire footprint with the broader economic and societal consequences of wildfire events.
+The animation demonstrates temporal vegetation dynamics throughout the recovery period.
 
 ---
 
-## Key Outputs
+# Key Findings
 
-The project produces the following visual outputs:
+✅ Approximately **7,174 hectares** burned
 
-| Output | File |
-|---|---|
-| Maui area of interest | `maui_aoi_ll.png` |
-| Project workflow | `flowchart.png` |
-| United States wildfire animation, 2016–2023 | `Fires_2016_2023.mp4` |
-| Burned areas | `burnt areas.png` |
-| NDVI vegetation recovery animation | `NDVI.mp4` |
-| Affected population | `affected pop.png` |
-| Affected cropland | `affected cropland.png` |
-| Affected grassland | `grassland.png` |
-| Wildfire cost animation | `cost of wildfires_with_name.mp4` |
+✅ Grassland represented the most affected land-cover category
+
+✅ Approximately **160,000 people** potentially exposed
+
+✅ Significant vegetation loss observed immediately following the wildfire
+
+✅ Progressive vegetation recovery observed through NDVI monitoring
+
+✅ Google Earth Engine enabled rapid, scalable disaster assessment
 
 ---
 
-## Repository Structure
+# Technologies Used
 
-```text
-maui-wildfires/
-│
-├── README.md
-│
-└── figures/
-    ├── .gitkeep
-    ├── Fires_2016_2023.mp4
-    ├── NDVI.mp4
-    ├── affected cropland.png
-    ├── affected pop.png
-    ├── burnt areas.png
-    ├── cost of wildfires_with_name.mp4
-    ├── flowchart.png
-    ├── grassland.png
-    └── maui_aoi_ll.png
+| Category | Technology |
+|-----------|------------|
+| Cloud Computing | Google Earth Engine |
+| Remote Sensing | Sentinel-2 |
+| Land Cover | ESA WorldCover |
+| Population | WorldPop |
+| GIS | ArcGIS Pro, QGIS |
+| Programming | JavaScript |
+| Analysis | Spectral Change Detection |
+| Monitoring | NDVI Time Series |
+
+---
+
+# Skills Demonstrated
+
+- Remote Sensing
+- Earth Observation
+- Burn Severity Mapping
+- Disaster Risk Assessment
+- Population Exposure Analysis
+- Environmental Monitoring
+- Time-Series Analysis
+- Geospatial Intelligence
+- GIS Automation
+- Google Earth Engine
+
+---
+
+# Project Impact
+
+This project demonstrates how cloud-based geospatial analytics and Earth Observation data can support rapid disaster assessment workflows that are scalable, reproducible, and actionable for emergency management agencies, environmental organizations, and policy makers.
+
+---
+
+# Author
+
+## Itohan-Osa Abu
+
+**Geospatial AI Scientist | Remote Sensing | GIS Automation | Climate Analytics**
+
+Specializing in Earth Observation, Environmental Monitoring, Geospatial Intelligence, and Machine Learning for environmental applications.
