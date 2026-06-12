@@ -51,9 +51,10 @@ Environmental hazard prediction and explainable AI workflows.
 
 ## Selected Links
 
-- LinkedIn: INSERT_LINKEDIN
-- ORCID: INSERT_ORCID
-- Google Scholar: INSERT_GOOGLE_SCHOLAR
+- LinkedIn: https://www.linkedin.com/in/itohan-osa-abu-155032b1/
+- ORCID: 0000-0002-7450-0601
+- Google Scholar: https://scholar.google.com/citations?user=eHVvCCkAAAAJ&hl=en
+
 
 ---
 
