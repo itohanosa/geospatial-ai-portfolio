@@ -1,6 +1,5 @@
 # Baltimore Urban Heat Insurance Risk Intelligence
 
-A recruiter-friendly geospatial AI project that converts satellite-derived urban heat indicators into **insurance-ready climate-risk screening outputs** for Baltimore City, Maryland.
 
 This project uses **Google Earth Engine, Landsat satellite imagery, vegetation indices, impervious surface data, population exposure, and water-body masking** to identify land areas with elevated urban heat risk. The final outputs include water-masked risk maps, census-tract priority rankings, insurance screening tiers, and portfolio-ready CSV deliverables.
 
