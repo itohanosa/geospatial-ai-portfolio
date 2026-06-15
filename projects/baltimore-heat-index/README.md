@@ -379,21 +379,6 @@ With these additions, the current Census Block Group priority score can be exten
 
 ---
 
-## Repository Structure
-
-| Folder / File | Description |
-|---|---|
-| README.md | Project documentation |
-| gee_script/baltimore_cbg_urban_heat_risk.js | Google Earth Engine script used to create the core heat-risk outputs |
-| data/Baltimore_CBG_Heat_Risk_ACS_Insurance_Joined.csv | Joined heat-risk and ACS dataset |
-| data/Baltimore_CBG_Heat_Risk_Info_2020_2024.csv | Census Block Group heat-risk output from Google Earth Engine |
-| images/baltimore-urban-heat-risk.png | Google Earth Engine-derived pixel-level heat-risk map |
-| images/heat-risk-category-chart.png | Heat-risk category distribution chart |
-| images/cbg-priority-map.png | Census Block Group priority map |
-| outputs/ | Exported maps, tables, and shapefiles |
-
----
-
 ## Main Fields
 
 | Field | Description |
