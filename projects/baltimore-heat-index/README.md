@@ -6,7 +6,7 @@ This project begins with a **Google Earth Engine-based urban heat-risk workflow*
 
 The Google Earth Engine outputs were then combined with American Community Survey indicators to produce an interpretable **ACS-adjusted heat-insurance priority score** at the Census Block Group level.
 
-The final workflow identifies where physical heat exposure, impervious urban surfaces, low vegetation, and household vulnerability overlap across Baltimore.
+The final workflow identifies where physical heat exposure, impervious urban surfaces, low vegetation, and household vulnerability overlap across Baltimore. This portfolio project demonstrates how satellite-derived urban heat metrics and census-based vulnerability indicators can be combined into a practical screening layer for climate-risk, insurance, and resilience planning.
 
 This is not a deterministic insurance-claims model. It is a spatial decision-support framework for identifying areas that may require deeper review, field validation, parcel-level analysis, insurance portfolio screening, or targeted adaptation investment.
 
