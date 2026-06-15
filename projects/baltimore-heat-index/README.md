@@ -1,4 +1,4 @@
-# Google Earth Engine-Based Baltimore Urban Heat and ACS-Adjusted Insurance Priority Mapping
+# Where Do Urban Heat Risk and Household Vulnerability Overlap in Baltimore?
 
 ## Overview
 
@@ -61,8 +61,6 @@ The result is a neighborhood-scale index that can support climate-risk communica
 - Location: Baltimore City, Maryland
 - Spatial unit: Census Block Group
 - Total Baltimore Census Block Groups: 618
-- Census Block Groups with valid final priority score: 613
-- Missing final priority scores: 5
 - Analysis period: Summer 2020 to 2024
 - Season: June to September
 - Water bodies: fully masked out of the analysis
@@ -337,17 +335,6 @@ Five Census Block Groups are missing final scores. These should be reviewed befo
 The poverty field was not available in the uploaded joined file. Therefore, the current ACS vulnerability score should not be described as directly using poverty until that variable is fixed or regenerated.
 
 The tier counts are close to balanced, suggesting that the tiering behaves like a quantile-style classification. Because of this, the spatial pattern and top-ranked Census Block Groups are more important than the raw number of Census Block Groups in each tier.
-
----
-
-## Suggested Figure Set
-
-| Figure | Purpose |
-|---|---|
-| Google Earth Engine-derived pixel-level Baltimore urban heat-risk map | Shows fine-scale spatial heat patterns |
-| Census Block Group priority map | Main policy and insurance screening deliverable |
-| Heat-risk category chart | Summarizes distribution of Census Block Group risk classes |
-| Top 50 versus citywide comparison table | Shows why the highest-priority Census Block Groups are analytically meaningful |
 
 ---
 
