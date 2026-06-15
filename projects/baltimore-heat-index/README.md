@@ -75,7 +75,7 @@ The result is a neighborhood-scale index that can support climate-risk communica
 
 This map shows the fine-scale urban heat-risk surface generated from Google Earth Engine after water bodies were fully masked out.
 
-![Baltimore Urban Heat Risk](images/baltimore-urban-heat-risk.png)
+![Google Earth Engine-derived Baltimore urban heat risk](figures/gee_heat_risk%20map_25mb.png)
 
 The highest heat-risk areas are concentrated in dense, highly impervious, low-vegetation urban zones. Lower-risk areas generally correspond to greener neighborhoods, parks, forested areas, and less impervious surfaces.
 
@@ -87,7 +87,7 @@ This raster surface is the foundation for the downstream Census Block Group scor
 
 This chart summarizes the percentage of Census Block Groups in each heat-risk category.
 
-![Heat Risk Category Chart](images/heat-risk-category-chart.png)
+![Baltimore heat risk category chart](figures/heat%20risk%20category%20chart.svg)
 
 A substantial share of Baltimore falls into the **High** and **Moderate** heat-risk classes, while the **Very Low** category represents only a small portion of the city.
 
