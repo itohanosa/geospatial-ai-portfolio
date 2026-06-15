@@ -97,9 +97,9 @@ A substantial share of Baltimore falls into the **High** and **Moderate** heat-r
 
 This map shows the final Census Block Group-level priority pattern after the Google Earth Engine heat-risk outputs were combined with American Community Survey vulnerability indicators.
 
-![CBG Priority Map](images/cbg-priority-map.png)
+![CBG Priority Map](figures/insurance_heat_acs_priority_areas.png)
 
-This is the strongest decision-support figure because it connects satellite-derived physical heat exposure with household vulnerability at a policy-relevant geography.
+This is the strongest decision-support figure because it connects satellite-derived physical heat exposure with household vulnerability at a policy relevant geography.
 
 ---
 
