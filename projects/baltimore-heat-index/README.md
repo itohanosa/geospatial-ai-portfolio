@@ -425,7 +425,7 @@ With these additions, the current Census Block Group priority score can be exten
 
 ---
 
-## Recruiter-Friendly Summary
+## Summary
 
 This project demonstrates an end-to-end geospatial climate-risk analytics workflow built first in **Google Earth Engine**.
 
