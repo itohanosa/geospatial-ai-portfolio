@@ -185,7 +185,7 @@ The animation demonstrates temporal vegetation dynamics throughout the recovery 
 | Remote Sensing | Sentinel-2 |
 | Land Cover | ESA WorldCover |
 | Population | WorldPop |
-| GIS | ArcGIS Pro, QGIS |
+| GIS | QGIS |
 | Programming | JavaScript |
 | Analysis | Spectral Change Detection |
 | Monitoring | NDVI Time Series |
