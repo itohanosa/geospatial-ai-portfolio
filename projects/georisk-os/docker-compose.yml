@@ -1,0 +1,100 @@
+services:
+  database:
+    image: postgis/postgis:17-3.5
+    container_name: georisk-database
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-georisk}
+      POSTGRES_USER: ${POSTGRES_USER:-georisk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-this-local-password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - georisk_postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-georisk} -d ${POSTGRES_DB:-georisk}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - georisk-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: georisk-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_VERSION: ${APP_VERSION:-0.1.0}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-georisk}:${POSTGRES_PASSWORD:-change-this-local-password}@database:5432/${POSTGRES_DB:-georisk}
+      CORS_ORIGINS: http://localhost:${FRONTEND_PORT:-3000}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - georisk-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: georisk-frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ./frontend:/app
+      - georisk_frontend_node_modules:/app/node_modules
+      - georisk_frontend_next_cache:/app/.next
+    command: ["npm", "run", "dev", "--", "-H", "0.0.0.0"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - georisk-network
+
+volumes:
+  georisk_postgres_data:
+  georisk_frontend_node_modules:
+  georisk_frontend_next_cache:
+
+networks:
+  georisk-network:
+    driver: bridge
