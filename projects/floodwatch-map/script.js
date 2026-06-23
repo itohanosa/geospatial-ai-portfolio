@@ -8,65 +8,44 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 const newsList = document.getElementById("news-list");
 const markersLayer = L.layerGroup().addTo(map);
 
-const rssFeeds = [
-  "https://news.google.com/rss/search?q=flooding+OR+%22flash+flood%22+OR+%22flood+warning%22+United+States&hl=en-US&gl=US&ceid=US:en",
-  "https://news.google.com/rss/search?q=%22river+flooding%22+United+States&hl=en-US&gl=US&ceid=US:en",
-  "https://news.google.com/rss/search?q=%22coastal+flooding%22+United+States&hl=en-US&gl=US&ceid=US:en"
-];
+const GDELT_URL =
+  "https://api.gdeltproject.org/api/v2/geo/geo" +
+  "?query=" +
+  encodeURIComponent("(flood OR flooding OR \"flash flood\" OR \"flood warning\" OR \"flood watch\" OR \"coastal flooding\" OR \"river flooding\") sourcecountry:US") +
+  "&mode=PointData" +
+  "&format=json" +
+  "&maxpoints=250" +
+  "&geores=2" +
+  "&timespan=24h";
 
-const locationHints = [
-  "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado",
-  "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho",
-  "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana",
-  "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
-  "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada",
-  "New Hampshire", "New Jersey", "New Mexico", "New York",
-  "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon",
-  "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota",
-  "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington",
-  "West Virginia", "Wisconsin", "Wyoming",
-
-  "Houston", "Baton Rouge", "New Orleans", "Miami", "Tampa",
-  "Baltimore", "Annapolis", "New York City", "Philadelphia", "Chicago",
-  "St. Louis", "Dallas", "Austin", "San Antonio", "Los Angeles",
-  "San Diego", "San Francisco", "Sacramento", "Seattle", "Portland",
-  "Atlanta", "Charlotte", "Raleigh", "Charleston", "Norfolk",
-  "Virginia Beach", "Washington DC", "Nashville", "Memphis",
-  "Jackson", "Little Rock", "Oklahoma City", "Tulsa", "Denver",
-  "Phoenix", "Las Vegas", "Salt Lake City", "Boise", "Billings",
-  "Minneapolis", "Milwaukee", "Detroit", "Cleveland", "Cincinnati",
-  "Pittsburgh", "Boston", "Providence", "Hartford", "Newark"
-];
-
-const geocodeCache = {};
-
-function cleanText(text) {
+function cleanText(value) {
+  if (!value) return "";
   const div = document.createElement("div");
-  div.innerHTML = text || "";
+  div.innerHTML = value;
   return div.textContent || div.innerText || "";
 }
 
-function getSeverity(title, description) {
-  const text = `${title} ${description}`.toLowerCase();
+function getSeverity(text) {
+  const lower = cleanText(text).toLowerCase();
 
   if (
-    text.includes("emergency") ||
-    text.includes("evacuation") ||
-    text.includes("deadly") ||
-    text.includes("catastrophic") ||
-    text.includes("life-threatening") ||
-    text.includes("flash flood warning")
+    lower.includes("emergency") ||
+    lower.includes("evacuation") ||
+    lower.includes("deadly") ||
+    lower.includes("catastrophic") ||
+    lower.includes("life-threatening") ||
+    lower.includes("flash flood warning")
   ) {
     return "High";
   }
 
   if (
-    text.includes("warning") ||
-    text.includes("severe") ||
-    text.includes("major") ||
-    text.includes("flood watch") ||
-    text.includes("river flooding") ||
-    text.includes("coastal flooding")
+    lower.includes("warning") ||
+    lower.includes("severe") ||
+    lower.includes("major") ||
+    lower.includes("flood watch") ||
+    lower.includes("river flooding") ||
+    lower.includes("coastal flooding")
   ) {
     return "Moderate";
   }
@@ -78,128 +57,124 @@ function getSeverityClass(severity) {
   return severity.toLowerCase();
 }
 
-function extractLocation(title, description) {
-  const text = `${title} ${description}`.toLowerCase();
-
-  for (const place of locationHints) {
-    if (text.includes(place.toLowerCase())) {
-      return place;
-    }
-  }
-
-  return null;
+function getArticleUrl(item) {
+  if (item.url) return item.url;
+  if (item.URL) return item.URL;
+  if (item.shareurl) return item.shareurl;
+  if (item.articleurl) return item.articleurl;
+  return "#";
 }
 
-async function geocodeLocation(locationName) {
-  if (!locationName) return null;
+function getTitle(item) {
+  return (
+    item.title ||
+    item.name ||
+    item.fullname ||
+    item.location ||
+    item.html ||
+    "Flood-related news location"
+  );
+}
 
-  if (geocodeCache[locationName]) {
-    return geocodeCache[locationName];
-  }
+function getLocationName(item) {
+  return (
+    item.name ||
+    item.location ||
+    item.fullname ||
+    item.label ||
+    item.title ||
+    "Mapped location"
+  );
+}
 
-  const query = encodeURIComponent(`${locationName}, USA`);
-  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1&countrycodes=us`;
+function getLatitude(item) {
+  return Number(
+    item.lat ||
+    item.latitude ||
+    item.Latitude ||
+    item.LAT ||
+    item.latitudedeg
+  );
+}
 
-  try {
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json"
-      }
+function getLongitude(item) {
+  return Number(
+    item.lon ||
+    item.lng ||
+    item.longitude ||
+    item.Longitude ||
+    item.LON ||
+    item.longitudedeg
+  );
+}
+
+function normalizeGdeltItems(data) {
+  if (Array.isArray(data)) return data;
+
+  if (Array.isArray(data.features)) {
+    return data.features.map((feature) => {
+      const props = feature.properties || {};
+      const coords = feature.geometry?.coordinates || [];
+
+      return {
+        ...props,
+        lon: coords[0],
+        lat: coords[1]
+      };
     });
-
-    const data = await response.json();
-
-    if (!data || data.length === 0) {
-      return null;
-    }
-
-    const result = {
-      displayName: data[0].display_name,
-      lat: parseFloat(data[0].lat),
-      lon: parseFloat(data[0].lon)
-    };
-
-    geocodeCache[locationName] = result;
-    return result;
-  } catch (error) {
-    console.error("Geocoding failed:", error);
-    return null;
   }
+
+  if (Array.isArray(data.results)) return data.results;
+  if (Array.isArray(data.locations)) return data.locations;
+  if (Array.isArray(data.articles)) return data.articles;
+
+  return [];
 }
 
-async function fetchRSSFeed(feedUrl) {
-  const proxyUrl =
-    "https://api.allorigins.win/raw?url=" + encodeURIComponent(feedUrl);
+async function fetchGdeltFloodNews() {
+  const response = await fetch(GDELT_URL);
 
-  const response = await fetch(proxyUrl);
-  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`GDELT request failed with status ${response.status}`);
+  }
 
-  const parser = new DOMParser();
-  const xml = parser.parseFromString(text, "application/xml");
-
-  return Array.from(xml.querySelectorAll("item")).map((item) => ({
-    title: cleanText(item.querySelector("title")?.textContent || "Flood news update"),
-    link: item.querySelector("link")?.textContent || "#",
-    pubDate: item.querySelector("pubDate")?.textContent || "",
-    description: cleanText(
-      item.querySelector("description")?.textContent ||
-      "Recent flood-related news item."
-    )
-  }));
+  const data = await response.json();
+  return normalizeGdeltItems(data);
 }
 
-async function loadFloodNews() {
-  newsList.innerHTML = "<p>Loading live flood news...</p>";
+function renderFloodNews(items) {
+  newsList.innerHTML = "";
   markersLayer.clearLayers();
 
-  const allItems = [];
+  const mappedItems = items
+    .map((item) => {
+      const lat = getLatitude(item);
+      const lon = getLongitude(item);
 
-  for (const feed of rssFeeds) {
-    try {
-      const items = await fetchRSSFeed(feed);
-      allItems.push(...items);
-    } catch (error) {
-      console.error("RSS feed failed:", error);
-    }
-  }
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return null;
+      }
 
-  const uniqueItems = [];
-  const seenTitles = new Set();
+      const title = cleanText(getTitle(item));
+      const location = cleanText(getLocationName(item));
+      const url = getArticleUrl(item);
+      const severity = getSeverity(`${title} ${location}`);
 
-  allItems.forEach((item) => {
-    if (!seenTitles.has(item.title)) {
-      seenTitles.add(item.title);
-      uniqueItems.push(item);
-    }
-  });
-
-  const mappedItems = [];
-
-  for (const item of uniqueItems.slice(0, 30)) {
-    const locationName = extractLocation(item.title, item.description);
-
-    if (!locationName) continue;
-
-    const geo = await geocodeLocation(locationName);
-
-    if (!geo) continue;
-
-    mappedItems.push({
-      ...item,
-      location: locationName,
-      lat: geo.lat,
-      lon: geo.lon,
-      severity: getSeverity(item.title, item.description)
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-
-  newsList.innerHTML = "";
+      return {
+        title,
+        location,
+        url,
+        severity,
+        lat,
+        lon
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 100);
 
   if (mappedItems.length === 0) {
     newsList.innerHTML =
-      "<p>No mappable flood news found right now. The live RSS feed may not contain recognizable city or state names at this moment.</p>";
+      "<p>No live GDELT flood locations found right now. Try refreshing later.</p>";
     return;
   }
 
@@ -212,7 +187,11 @@ async function loadFloodNews() {
         <strong>${item.title}</strong><br>
         ${item.location}<br>
         Severity: ${item.severity}<br>
-        <a href="${item.link}" target="_blank" rel="noopener noreferrer">Read source</a>
+        ${
+          item.url !== "#"
+            ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">Read source</a>`
+            : ""
+        }
       `);
 
     const card = document.createElement("div");
@@ -221,10 +200,12 @@ async function loadFloodNews() {
     card.innerHTML = `
       <span class="badge ${severityClass}">${item.severity}</span>
       <h3>${item.title}</h3>
-      <p><strong>Location:</strong> ${item.location}</p>
-      <p><strong>Date:</strong> ${item.pubDate}</p>
-      <p>${item.description}</p>
-      <a href="${item.link}" target="_blank" rel="noopener noreferrer">Read source</a>
+      <p><strong>Mapped location:</strong> ${item.location}</p>
+      ${
+        item.url !== "#"
+          ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">Read source</a>`
+          : "<p>Source link unavailable from this GDELT point.</p>"
+      }
     `;
 
     newsList.appendChild(card);
@@ -237,6 +218,22 @@ async function loadFloodNews() {
   }
 }
 
+async function loadFloodNews() {
+  newsList.innerHTML = "<p>Loading live GDELT flood news map...</p>";
+
+  try {
+    const items = await fetchGdeltFloodNews();
+    renderFloodNews(items);
+  } catch (error) {
+    console.error(error);
+
+    newsList.innerHTML = `
+      <p>Unable to load live GDELT data right now.</p>
+      <p>Please refresh the page later.</p>
+    `;
+  }
+}
+
 loadFloodNews();
 
-setInterval(loadFloodNews, 30 * 60 * 1000);
+setInterval(loadFloodNews, 15 * 60 * 1000);
