@@ -1,43 +1,62 @@
 "use strict";
 
 /*
-  Live U.S. flood-news map
+  FloodWatch Map
+  ---------------------------------------------------------
+  Static GitHub Pages-compatible implementation.
 
   Workflow:
-  1. Retrieve recent flood-related articles from GDELT.
-  2. Keep only articles published within the last 24 hours.
-  3. Extract United States locations from article headlines.
-  4. Geocode the extracted locations.
-  5. Display the articles and locations on a Leaflet map.
-  6. Refresh automatically every 15 minutes.
+  1. Load current flood articles from GDELT using JSONP.
+  2. Avoid browser CORS/fetch failures.
+  3. Keep articles published during the last 24 hours.
+  4. Extract United States locations from headlines.
+  5. Geocode locations with Open-Meteo.
+  6. Plot locations on a Leaflet map.
+  7. Refresh automatically every 15 minutes.
 */
 
 const SETTINGS = {
-  hours: 24,
-  refreshMs: 15 * 60 * 1000,
-  maxFeedArticles: 100,
-  maxArticlesToGeocode: 35,
-  maxMappedArticles: 25,
-  geocodeConcurrency: 5,
-  requestTimeoutMs: 20000,
-  cacheKey: "floodwatch-geocodes-v2",
-  cacheLifetimeMs: 30 * 24 * 60 * 60 * 1000
+  articleWindowHours: 24,
+  refreshIntervalMs: 15 * 60 * 1000,
+  gdeltTimeoutMs: 30000,
+  geocodeTimeoutMs: 15000,
+  maximumGdeltArticles: 100,
+  maximumArticlesToGeocode: 40,
+  maximumMappedArticles: 30,
+  geocodeConcurrency: 4,
+  geocodeCacheKey: "floodwatch-geocode-cache-v4",
+  geocodeCacheLifetimeMs: 30 * 24 * 60 * 60 * 1000
 };
 
-if (typeof L === "undefined") {
-  throw new Error("Leaflet must be loaded before script.js.");
-}
+/* -------------------------------------------------------
+   REQUIRED PAGE ELEMENTS
+------------------------------------------------------- */
 
 const mapElement = document.getElementById("map");
 const newsList = document.getElementById("news-list");
 
-if (!mapElement || !newsList) {
+if (!mapElement) {
+  throw new Error('The page must contain an element with id="map".');
+}
+
+if (!newsList) {
+  throw new Error('The page must contain an element with id="news-list".');
+}
+
+if (typeof L === "undefined") {
   throw new Error(
-    'Your HTML must contain elements with IDs "map" and "news-list".'
+    "Leaflet is not loaded. Make sure Leaflet loads before script.js."
   );
 }
 
-const map = L.map("map").setView([39.8283, -98.5795], 4);
+/* -------------------------------------------------------
+   LEAFLET MAP
+------------------------------------------------------- */
+
+const map = L.map("map", {
+  zoomControl: true,
+  minZoom: 3
+}).setView([39.8283, -98.5795], 4);
 
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
@@ -46,19 +65,27 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 
 const markersLayer = L.layerGroup().addTo(map);
 
+/* -------------------------------------------------------
+   SEARCH SETTINGS
+------------------------------------------------------- */
+
 const FLOOD_QUERY =
-  '(flood OR flooding OR "flash flood" OR "flood warning" OR "flood watch" OR "coastal flooding" OR "river flooding" OR "high water") sourcecountry:US';
+  '("flood" OR "flooding" OR "flash flood" OR "flood warning" OR "flood watch" OR "river flooding" OR "coastal flooding") sourcecountry:US';
 
-const FLOOD_WORDS =
-  /\b(flood|flooding|flooded|flash flood|high water|inundat(?:e|ed|ion)|levee breach|dam break)\b/i;
+const FLOOD_TERMS =
+  /\b(flood|flooding|flooded|flash flood|river flooding|coastal flooding|flood warning|flood watch|inundation|inundated|high water|levee breach|dam break)\b/i;
 
-const FALSE_FLOOD =
+const FALSE_POSITIVE_TERMS =
   /\bflood(?:ed|ing)?\s+(?:with|of)\s+(?:calls|comments|complaints|donations|emails|messages|orders|requests|support|tributes|visitors|votes)\b/i;
 
-const HISTORICAL_WORDS =
+const HISTORICAL_TERMS =
   /\b(anniversary|archive|archived|flashback|historical|history of|last year|retrospective|years ago)\b/i;
 
-const STATE_ABBR_TO_NAME = Object.freeze({
+/* -------------------------------------------------------
+   UNITED STATES DATA
+------------------------------------------------------- */
+
+const STATE_ABBREVIATIONS = Object.freeze({
   AL: "Alabama",
   AK: "Alaska",
   AZ: "Arizona",
@@ -112,17 +139,27 @@ const STATE_ABBR_TO_NAME = Object.freeze({
   WY: "Wyoming"
 });
 
-const STATE_NAMES = Object.values(STATE_ABBR_TO_NAME).sort(
-  (a, b) => b.length - a.length
+const STATE_NAMES = Object.values(STATE_ABBREVIATIONS).sort(
+  (stateA, stateB) => stateB.length - stateA.length
 );
 
-const STATE_ABBRS_PATTERN = Object.keys(STATE_ABBR_TO_NAME).join("|");
+const STATE_ABBREVIATION_PATTERN =
+  Object.keys(STATE_ABBREVIATIONS).join("|");
 
-const STATE_NAMES_PATTERN = STATE_NAMES.map(escapeRegex).join("|");
+const STATE_NAME_PATTERN = STATE_NAMES.map(escapeRegex).join("|");
 
-const geocodeRequests = new Map();
+/* -------------------------------------------------------
+   APPLICATION STATE
+------------------------------------------------------- */
 
 let loading = false;
+let lastSuccessfulUpdate = null;
+
+const activeGeocodeRequests = new Map();
+
+/* -------------------------------------------------------
+   GENERAL HELPERS
+------------------------------------------------------- */
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -138,21 +175,24 @@ function escapeHtml(value) {
 }
 
 function cleanText(value) {
-  const element = document.createElement("div");
+  const temporaryElement = document.createElement("div");
 
-  element.innerHTML = String(value || "");
+  temporaryElement.innerHTML = String(value || "");
 
-  return (element.textContent || "")
+  return (temporaryElement.textContent || "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function safeUrl(value) {
   try {
-    const url = new URL(value);
+    const parsedUrl = new URL(String(value || ""));
 
-    if (url.protocol === "http:" || url.protocol === "https:") {
-      return url.href;
+    if (
+      parsedUrl.protocol === "https:" ||
+      parsedUrl.protocol === "http:"
+    ) {
+      return parsedUrl.href;
     }
 
     return "";
@@ -161,111 +201,152 @@ function safeUrl(value) {
   }
 }
 
-function sourceDomain(url) {
+function getDomain(url) {
   try {
-    return new URL(url).hostname.replace(/^www\./, "");
+    return new URL(url).hostname.replace(/^www\./i, "");
   } catch {
     return "Unknown source";
   }
 }
 
-function gdeltTimestamp(date) {
-  const pad = (number) => String(number).padStart(2, "0");
-
+function createUniqueCallbackName() {
   return (
-    `${date.getUTCFullYear()}` +
-    `${pad(date.getUTCMonth() + 1)}` +
-    `${pad(date.getUTCDate())}` +
-    `${pad(date.getUTCHours())}` +
-    `${pad(date.getUTCMinutes())}` +
-    `${pad(date.getUTCSeconds())}`
+    "__floodwatchGdeltCallback_" +
+    Date.now() +
+    "_" +
+    Math.random().toString(36).slice(2)
   );
 }
 
-function buildGdeltUrl() {
-  const end = new Date();
+/* -------------------------------------------------------
+   GDELT JSONP
 
-  const start = new Date(
-    end.getTime() - SETTINGS.hours * 60 * 60 * 1000
-  );
+   JSONP uses a dynamically inserted script element.
+   It does not use fetch(), so it avoids the browser
+   cross-origin error shown in the screenshot.
+------------------------------------------------------- */
 
-  const params = new URLSearchParams({
+function buildGdeltJsonpUrl(callbackName) {
+  const parameters = new URLSearchParams({
     query: FLOOD_QUERY,
     mode: "ArtList",
-    format: "json",
-    maxrecords: String(SETTINGS.maxFeedArticles),
+    format: "jsonp",
+    callback: callbackName,
+    maxrecords: String(SETTINGS.maximumGdeltArticles),
     sort: "DateDesc",
-    STARTDATETIME: gdeltTimestamp(start),
-    ENDDATETIME: gdeltTimestamp(end)
+    timespan: `${SETTINGS.articleWindowHours}h`,
+    _: String(Date.now())
   });
 
-  return `https://api.gdeltproject.org/api/v2/doc/doc?${params.toString()}`;
+  return (
+    "https://api.gdeltproject.org/api/v2/doc/doc?" +
+    parameters.toString()
+  );
 }
 
-async function fetchJson(url) {
-  const controller = new AbortController();
+function fetchGdeltWithJsonp() {
+  return new Promise((resolve, reject) => {
+    const callbackName = createUniqueCallbackName();
+    const scriptElement = document.createElement("script");
 
-  const timer = setTimeout(() => {
-    controller.abort();
-  }, SETTINGS.requestTimeoutMs);
+    let requestCompleted = false;
 
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      cache: "no-store",
-      headers: {
-        Accept: "application/json"
+    const timeout = window.setTimeout(() => {
+      if (requestCompleted) {
+        return;
       }
-    });
 
-    if (!response.ok) {
-      throw new Error(`Request failed with HTTP ${response.status}`);
+      requestCompleted = true;
+      cleanup();
+
+      reject(
+        new Error(
+          "GDELT did not respond within 30 seconds. Please try again shortly."
+        )
+      );
+    }, SETTINGS.gdeltTimeoutMs);
+
+    function cleanup() {
+      window.clearTimeout(timeout);
+
+      if (scriptElement.parentNode) {
+        scriptElement.parentNode.removeChild(scriptElement);
+      }
+
+      try {
+        delete window[callbackName];
+      } catch {
+        window[callbackName] = undefined;
+      }
     }
 
-    return await response.json();
-  } finally {
-    clearTimeout(timer);
-  }
+    window[callbackName] = function handleGdeltResponse(data) {
+      if (requestCompleted) {
+        return;
+      }
+
+      requestCompleted = true;
+      cleanup();
+      resolve(data);
+    };
+
+    scriptElement.src = buildGdeltJsonpUrl(callbackName);
+    scriptElement.async = true;
+
+    scriptElement.onerror = function handleGdeltError() {
+      if (requestCompleted) {
+        return;
+      }
+
+      requestCompleted = true;
+      cleanup();
+
+      reject(
+        new Error(
+          "The GDELT service could not be reached. This is usually a temporary GDELT connection problem."
+        )
+      );
+    };
+
+    document.head.appendChild(scriptElement);
+  });
 }
 
-async function fetchJsonWithFallback(url) {
-  try {
-    return await fetchJson(url);
-  } catch (directError) {
-    console.warn(
-      "Direct GDELT request failed. Trying the fallback proxy.",
-      directError
-    );
+/* -------------------------------------------------------
+   ARTICLE DATE PARSING
+------------------------------------------------------- */
 
-    const proxyUrl =
-      "https://api.allorigins.win/raw?url=" +
-      encodeURIComponent(url);
+function parseArticleDate(value) {
+  const rawDate = String(value || "").trim();
 
-    return await fetchJson(proxyUrl);
+  if (!rawDate) {
+    return null;
   }
-}
 
-function parseDate(value) {
-  const raw = String(value || "").trim();
+  /*
+    Common GDELT examples:
+    20260623T041500Z
+    20260623041500
+  */
 
-  const compactDate = raw.match(
+  const compactMatch = rawDate.match(
     /^(\d{4})(\d{2})(\d{2})T?(\d{2})(\d{2})(\d{2})(?:\.\d+)?Z?$/
   );
 
-  if (compactDate) {
+  if (compactMatch) {
     return new Date(
       Date.UTC(
-        Number(compactDate[1]),
-        Number(compactDate[2]) - 1,
-        Number(compactDate[3]),
-        Number(compactDate[4]),
-        Number(compactDate[5]),
-        Number(compactDate[6])
+        Number(compactMatch[1]),
+        Number(compactMatch[2]) - 1,
+        Number(compactMatch[3]),
+        Number(compactMatch[4]),
+        Number(compactMatch[5]),
+        Number(compactMatch[6])
       )
     );
   }
 
-  const parsedDate = new Date(raw);
+  const parsedDate = new Date(rawDate);
 
   if (Number.isNaN(parsedDate.getTime())) {
     return null;
@@ -274,98 +355,113 @@ function parseDate(value) {
   return parsedDate;
 }
 
-function normalizeArticles(data) {
+/* -------------------------------------------------------
+   NORMALIZE GDELT ARTICLES
+------------------------------------------------------- */
+
+function normalizeGdeltArticles(data) {
   let records = [];
 
   if (Array.isArray(data?.articles)) {
     records = data.articles;
   } else if (Array.isArray(data?.items)) {
     records = data.items;
+  } else if (Array.isArray(data)) {
+    records = data;
   }
 
   return records
     .map((record) => {
       const url = safeUrl(
         record.url ||
+          record.link ||
           record.external_url ||
-          record.link
+          record.articleurl
       );
 
       const title = cleanText(
         record.title ||
-          record.name
+          record.name ||
+          record.headline
       );
 
-      const date = parseDate(
+      const date = parseArticleDate(
         record.seendate ||
           record.date ||
+          record.pubDate ||
           record.date_published ||
-          record.pubDate
+          record.published
       );
+
+      const domain =
+        cleanText(record.domain) ||
+        getDomain(url);
 
       return {
         title,
         url,
         date,
-        domain:
-          cleanText(record.domain) ||
-          sourceDomain(url)
+        domain
       };
     })
     .filter((article) => {
-      return (
+      return Boolean(
         article.title &&
-        article.url &&
-        article.date
+          article.url &&
+          article.date &&
+          !Number.isNaN(article.date.getTime())
       );
     });
 }
 
-function isFresh(article, now) {
+/* -------------------------------------------------------
+   ARTICLE FILTERING
+------------------------------------------------------- */
+
+function isArticleFresh(article, currentTime) {
   const ageMilliseconds =
-    now.getTime() - article.date.getTime();
+    currentTime.getTime() -
+    article.date.getTime();
 
-  const maximumAge =
-    SETTINGS.hours * 60 * 60 * 1000;
+  const maximumAgeMilliseconds =
+    SETTINGS.articleWindowHours *
+    60 *
+    60 *
+    1000;
 
-  const futureTolerance =
-    -10 * 60 * 1000;
+  const futureDateTolerance =
+    -15 * 60 * 1000;
 
   return (
-    ageMilliseconds >= futureTolerance &&
-    ageMilliseconds <= maximumAge
+    ageMilliseconds >= futureDateTolerance &&
+    ageMilliseconds <= maximumAgeMilliseconds
   );
 }
 
-function isHistorical(article, now) {
-  const currentYear = now.getUTCFullYear();
+function isHistoricalArticle(article, currentTime) {
+  if (HISTORICAL_TERMS.test(article.title)) {
+    return true;
+  }
 
-  const yearMatches =
-    `${article.title} ${article.url}`.match(
-      /\b(?:19|20)\d{2}\b/g
-    ) || [];
+  const currentYear = currentTime.getUTCFullYear();
 
-  const containsOldYear = yearMatches.some(
-    (year) => Number(year) < currentYear
-  );
+  const foundYears =
+    `${article.title} ${article.url}`.match(/\b(?:19|20)\d{2}\b/g) || [];
 
-  const containsHistoricalLanguage =
-    HISTORICAL_WORDS.test(article.title);
-
-  return (
-    containsOldYear ||
-    containsHistoricalLanguage
-  );
+  return foundYears.some((year) => {
+    return Number(year) < currentYear;
+  });
 }
 
-function uniqueArticles(articles) {
-  const existingUrls = new Set();
-  const existingTitles = new Set();
+function removeDuplicateArticles(articles) {
+  const knownUrls = new Set();
+  const knownTitles = new Set();
 
   return articles.filter((article) => {
     const normalizedUrl = article.url
       .replace(/[?#].*$/, "")
-      .replace(/\/$/, "");
+      .replace(/\/$/, "")
+      .toLowerCase();
 
     const normalizedTitle = article.title
       .toLowerCase()
@@ -373,74 +469,69 @@ function uniqueArticles(articles) {
       .trim();
 
     if (
-      existingUrls.has(normalizedUrl) ||
-      existingTitles.has(normalizedTitle)
+      knownUrls.has(normalizedUrl) ||
+      knownTitles.has(normalizedTitle)
     ) {
       return false;
     }
 
-    existingUrls.add(normalizedUrl);
-    existingTitles.add(normalizedTitle);
+    knownUrls.add(normalizedUrl);
+    knownTitles.add(normalizedTitle);
 
     return true;
   });
 }
 
-async function getCurrentArticles() {
-  const now = new Date();
+async function getCurrentFloodArticles() {
+  const data = await fetchGdeltWithJsonp();
+  const currentTime = new Date();
 
-  const data = await fetchJsonWithFallback(
-    buildGdeltUrl()
-  );
-
-  return uniqueArticles(
-    normalizeArticles(data)
-      .filter((article) => isFresh(article, now))
-      .filter((article) => !isHistorical(article, now))
-      .filter((article) => {
-        return (
-          FLOOD_WORDS.test(article.title) &&
-          !FALSE_FLOOD.test(article.title)
-        );
-      })
+  return removeDuplicateArticles(
+    normalizeGdeltArticles(data)
+      .filter((article) => isArticleFresh(article, currentTime))
+      .filter((article) => !isHistoricalArticle(article, currentTime))
+      .filter((article) => FLOOD_TERMS.test(article.title))
+      .filter((article) => !FALSE_POSITIVE_TERMS.test(article.title))
       .sort((articleA, articleB) => {
-        return articleB.date - articleA.date;
+        return articleB.date.getTime() - articleA.date.getTime();
       })
   );
 }
 
-function cleanLocation(value) {
+/* -------------------------------------------------------
+   LOCATION EXTRACTION
+------------------------------------------------------- */
+
+function cleanLocationCandidate(value) {
   let location = cleanText(value)
-    .replace(
-      /^[\s,;:|–—-]+|[\s,;:|–—-]+$/g,
-      ""
-    )
+    .replace(/^[\s,;:|–—-]+/, "")
+    .replace(/[\s,;:|–—-]+$/, "")
     .replace(/^the\s+/i, "")
+    .replace(/[.!?].*$/, "")
     .replace(
       /\b(after|amid|as|because|causing|due|following|forces?|hits?|leaves?|prompts?|strikes?|threatens?|under|when|where|while|with)\b.*$/i,
       ""
     )
-    .replace(/[.!?].*$/, "")
     .trim();
 
-  const words = location
+  const locationWords = location
     .split(/\s+/)
     .filter(Boolean);
 
-  if (words.length > 6) {
-    location = words.slice(-6).join(" ");
+  if (locationWords.length > 7) {
+    location = locationWords.slice(-7).join(" ");
   }
 
   if (
     !location ||
     location.length < 2 ||
-    location.length > 70
+    location.length > 80
   ) {
     return "";
   }
 
   if (
-    /\b(flood|flooding|warning|watch|storm|rain|weather)\b/i.test(
+    /\b(flood|flooding|warning|watch|storm|rain|weather|residents|officials|people|homes|roads)\b/i.test(
       location
     )
   ) {
@@ -453,165 +544,185 @@ function cleanLocation(value) {
 function extractLocationCandidates(title) {
   const candidates = [];
 
-  function addCandidate(value) {
-    const location = cleanLocation(value);
+  function addCandidate(candidate) {
+    const cleanedCandidate =
+      cleanLocationCandidate(candidate);
 
-    if (!location) {
+    if (!cleanedCandidate) {
       return;
     }
 
-    const alreadyExists = candidates.some(
-      (existingLocation) =>
-        existingLocation.toLowerCase() ===
-        location.toLowerCase()
-    );
+    const duplicate = candidates.some((existingCandidate) => {
+      return (
+        existingCandidate.toLowerCase() ===
+        cleanedCandidate.toLowerCase()
+      );
+    });
 
-    if (!alreadyExists) {
-      candidates.push(location);
+    if (!duplicate) {
+      candidates.push(cleanedCandidate);
     }
   }
 
-  const cityAndStateAbbreviation = new RegExp(
-    `([A-Z][A-Za-z.'’\\-]*(?:\\s+(?:[A-Z][A-Za-z.'’\\-]*|of|the)){0,3}),\\s*(${STATE_ABBRS_PATTERN})\\b`,
+  /*
+    Example:
+    Baltimore, MD
+    Austin, TX
+  */
+
+  const cityStateAbbreviationRegex = new RegExp(
+    `([A-Z][A-Za-z.'’\\-]*(?:\\s+(?:[A-Z][A-Za-z.'’\\-]*|of|the)){0,4}),\\s*(${STATE_ABBREVIATION_PATTERN})\\b`,
     "g"
   );
 
-  for (
-    const match of title.matchAll(
-      cityAndStateAbbreviation
-    )
-  ) {
+  for (const match of title.matchAll(cityStateAbbreviationRegex)) {
     const city = match[1];
-    const stateName =
-      STATE_ABBR_TO_NAME[match[2]];
+    const state = STATE_ABBREVIATIONS[match[2]];
 
-    addCandidate(`${city}, ${stateName}`);
+    addCandidate(`${city}, ${state}`);
   }
 
-  const locationAfterPreposition =
-    /\b(?:in|near|around|outside|across|throughout|for|along|from)\s+([^:;|–—-]{2,75})/gi;
+  /*
+    Example:
+    Baltimore, Maryland
+    Austin, Texas
+  */
 
-  for (
-    const match of title.matchAll(
-      locationAfterPreposition
-    )
-  ) {
-    addCandidate(match[1]);
-  }
-
-  const locationAfterImpactVerb =
-    /\b(?:hits?|strikes?|swamps?|inundates?|threatens?)\s+([A-Z][^:;|–—-]{1,60})/g;
-
-  for (
-    const match of title.matchAll(
-      locationAfterImpactVerb
-    )
-  ) {
-    addCandidate(match[1]);
-  }
-
-  const stateNamePattern = new RegExp(
-    `\\b(${STATE_NAMES_PATTERN})\\b`,
+  const cityStateNameRegex = new RegExp(
+    `([A-Z][A-Za-z.'’\\-]*(?:\\s+(?:[A-Z][A-Za-z.'’\\-]*|of|the)){0,4}),\\s*(${STATE_NAME_PATTERN})\\b`,
     "gi"
   );
 
-  for (
-    const match of title.matchAll(
-      stateNamePattern
-    )
-  ) {
+  for (const match of title.matchAll(cityStateNameRegex)) {
+    addCandidate(`${match[1]}, ${match[2]}`);
+  }
+
+  /*
+    Example:
+    Flooding in Baltimore
+    Flood warning near Houston
+    High water across Louisiana
+  */
+
+  const prepositionLocationRegex =
+    /\b(?:in|near|around|outside|across|throughout|for|along|from)\s+([^:;|–—-]{2,80})/gi;
+
+  for (const match of title.matchAll(prepositionLocationRegex)) {
     addCandidate(match[1]);
   }
 
-  return candidates.slice(0, 4);
+  /*
+    Example:
+    Flash flooding hits Houston
+    Flooding threatens New Orleans
+  */
+
+  const impactLocationRegex =
+    /\b(?:hits?|strikes?|swamps?|inundates?|threatens?|affects?)\s+([A-Z][^:;|–—-]{1,70})/g;
+
+  for (const match of title.matchAll(impactLocationRegex)) {
+    addCandidate(match[1]);
+  }
+
+  /*
+    Search for complete state names anywhere in the headline.
+  */
+
+  const stateNameRegex = new RegExp(
+    `\\b(${STATE_NAME_PATTERN})\\b`,
+    "gi"
+  );
+
+  for (const match of title.matchAll(stateNameRegex)) {
+    addCandidate(match[1]);
+  }
+
+  return candidates.slice(0, 5);
 }
 
-function readCache() {
+/* -------------------------------------------------------
+   GEOCODING CACHE
+------------------------------------------------------- */
+
+function readGeocodeCache() {
   try {
-    return (
-      JSON.parse(
-        localStorage.getItem(
-          SETTINGS.cacheKey
-        ) || "{}"
-      ) || {}
+    const cacheText = localStorage.getItem(
+      SETTINGS.geocodeCacheKey
     );
+
+    return cacheText ? JSON.parse(cacheText) : {};
   } catch {
     return {};
   }
 }
 
-function cachedGeocode(query) {
-  const cache = readCache();
+function getCachedGeocode(query) {
+  const cache = readGeocodeCache();
+  const cacheEntry = cache[query.toLowerCase()];
 
-  const entry =
-    cache[query.toLowerCase()];
-
-  if (!entry) {
+  if (!cacheEntry) {
     return undefined;
   }
 
   const cacheAge =
-    Date.now() - entry.savedAt;
+    Date.now() - Number(cacheEntry.savedAt || 0);
 
-  if (
-    cacheAge >
-    SETTINGS.cacheLifetimeMs
-  ) {
+  if (cacheAge > SETTINGS.geocodeCacheLifetimeMs) {
     return undefined;
   }
 
-  return entry.value;
+  return cacheEntry.value;
 }
 
-function storeGeocode(query, value) {
+function saveGeocodeToCache(query, value) {
   try {
-    const cache = readCache();
+    const cache = readGeocodeCache();
 
     cache[query.toLowerCase()] = {
       savedAt: Date.now(),
       value
     };
 
-    const newestEntries = Object.entries(cache)
-      .sort(
-        (entryA, entryB) =>
-          entryB[1].savedAt -
-          entryA[1].savedAt
-      )
-      .slice(0, 400);
+    const trimmedEntries = Object.entries(cache)
+      .sort((entryA, entryB) => {
+        return (
+          Number(entryB[1].savedAt || 0) -
+          Number(entryA[1].savedAt || 0)
+        );
+      })
+      .slice(0, 500);
 
     localStorage.setItem(
-      SETTINGS.cacheKey,
-      JSON.stringify(
-        Object.fromEntries(newestEntries)
-      )
+      SETTINGS.geocodeCacheKey,
+      JSON.stringify(Object.fromEntries(trimmedEntries))
     );
   } catch (error) {
-    console.warn(
-      "The geocoding cache could not be saved.",
-      error
-    );
+    console.warn("Unable to save geocoding cache.", error);
   }
 }
 
-function isInUnitedStates(lat, lon) {
+/* -------------------------------------------------------
+   UNITED STATES BOUNDARIES
+------------------------------------------------------- */
+
+function isInsideUnitedStates(latitude, longitude) {
   const continentalUnitedStates =
-    lat >= 24 &&
-    lat <= 50 &&
-    lon >= -125 &&
-    lon <= -66;
+    latitude >= 24 &&
+    latitude <= 50 &&
+    longitude >= -125 &&
+    longitude <= -66;
 
   const alaska =
-    lat >= 51 &&
-    lat <= 72 &&
-    lon >= -170 &&
-    lon <= -129;
+    latitude >= 51 &&
+    latitude <= 72 &&
+    longitude >= -170 &&
+    longitude <= -129;
 
   const hawaii =
-    lat >= 18 &&
-    lat <= 23 &&
-    lon >= -161 &&
-    lon <= -154;
+    latitude >= 18 &&
+    latitude <= 23 &&
+    longitude >= -161 &&
+    longitude <= -154;
 
   return (
     continentalUnitedStates ||
@@ -620,192 +731,210 @@ function isInUnitedStates(lat, lon) {
   );
 }
 
-async function geocode(query) {
-  const cachedResult =
-    cachedGeocode(query);
+/* -------------------------------------------------------
+   FETCH JSON FOR GEOCODING ONLY
+------------------------------------------------------- */
+
+async function fetchJson(url, timeoutMilliseconds) {
+  const controller = new AbortController();
+
+  const timeout = window.setTimeout(() => {
+    controller.abort();
+  }, timeoutMilliseconds);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Request returned HTTP ${response.status}.`
+      );
+    }
+
+    return await response.json();
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+/* -------------------------------------------------------
+   OPEN-METEO GEOCODING
+------------------------------------------------------- */
+
+async function geocodeLocation(query) {
+  const cachedResult = getCachedGeocode(query);
 
   if (cachedResult !== undefined) {
     return cachedResult;
   }
 
-  const requestKey =
-    query.toLowerCase();
+  const requestKey = query.toLowerCase();
 
-  if (
-    geocodeRequests.has(requestKey)
-  ) {
-    return geocodeRequests.get(
-      requestKey
-    );
+  if (activeGeocodeRequests.has(requestKey)) {
+    return activeGeocodeRequests.get(requestKey);
   }
 
-  const request = (async () => {
+  const geocodePromise = (async () => {
     try {
-      const parameters =
-        new URLSearchParams({
-          name: query,
-          count: "10",
-          language: "en",
-          format: "json",
-          countryCode: "US"
-        });
+      const parameters = new URLSearchParams({
+        name: query,
+        count: "10",
+        language: "en",
+        format: "json",
+        countryCode: "US"
+      });
+
+      const url =
+        "https://geocoding-api.open-meteo.com/v1/search?" +
+        parameters.toString();
 
       const data = await fetchJson(
-        `https://geocoding-api.open-meteo.com/v1/search?${parameters.toString()}`
+        url,
+        SETTINGS.geocodeTimeoutMs
       );
 
-      const results = (
-        data.results || []
-      ).filter((result) => {
-        return (
-          String(
-            result.country_code
-          ).toUpperCase() === "US"
-        );
-      });
+      const results = Array.isArray(data?.results)
+        ? data.results.filter((result) => {
+            return (
+              String(result.country_code || "").toUpperCase() === "US"
+            );
+          })
+        : [];
 
       const queryParts = query
         .toLowerCase()
         .split(",")
         .map((part) => part.trim());
 
-      const queryPlace =
-        queryParts[0] || "";
+      const requestedPlace = queryParts[0] || "";
+      const requestedState = queryParts[1] || "";
 
-      const queryState =
-        queryParts[1] || "";
-
-      const rankedResult = results
-        .map((item, index) => {
+      const rankedResults = results
+        .map((result, originalIndex) => {
           const resultName = String(
-            item.name || ""
+            result.name || ""
           ).toLowerCase();
 
           const resultState = String(
-            item.admin1 || ""
+            result.admin1 || ""
           ).toLowerCase();
 
-          let score = -index;
+          let score = -originalIndex;
 
-          if (
-            resultName === queryPlace
-          ) {
+          if (resultName === requestedPlace) {
             score += 100;
           } else if (
-            resultName.includes(
-              queryPlace
-            ) ||
-            queryPlace.includes(
-              resultName
-            )
+            resultName.includes(requestedPlace) ||
+            requestedPlace.includes(resultName)
           ) {
             score += 40;
           }
 
           if (
-            queryState &&
-            resultState === queryState
+            requestedState &&
+            resultState === requestedState
           ) {
             score += 80;
           }
 
           if (
-            /^PPL/.test(
-              String(
-                item.feature_code || ""
-              )
-            )
+            String(result.feature_code || "").startsWith("PPL")
           ) {
             score += 20;
           }
 
-          score += Math.min(
-            15,
-            Math.log10(
-              Number(
-                item.population || 0
-              ) + 1
-            ) * 2
-          );
+          const population = Number(result.population || 0);
+
+          if (population > 0) {
+            score += Math.min(
+              20,
+              Math.log10(population + 1) * 2
+            );
+          }
 
           return {
-            item,
+            result,
             score
           };
         })
-        .sort(
-          (resultA, resultB) =>
-            resultB.score -
-            resultA.score
-        )[0]?.item;
+        .sort((resultA, resultB) => {
+          return resultB.score - resultA.score;
+        });
 
-      const location = rankedResult
-        ? {
-            lat: Number(
-              rankedResult.latitude
-            ),
-            lon: Number(
-              rankedResult.longitude
-            ),
-            name: cleanText(
-              rankedResult.name
-            ),
-            state: cleanText(
-              rankedResult.admin1
-            )
-          }
-        : null;
+      const bestResult = rankedResults[0]?.result;
 
-      const validLocation =
-        location &&
-        isInUnitedStates(
-          location.lat,
-          location.lon
-        )
-          ? location
-          : null;
+      if (!bestResult) {
+        saveGeocodeToCache(query, null);
+        return null;
+      }
 
-      storeGeocode(
-        query,
-        validLocation
-      );
+      const latitude = Number(bestResult.latitude);
+      const longitude = Number(bestResult.longitude);
 
-      return validLocation;
+      if (
+        !Number.isFinite(latitude) ||
+        !Number.isFinite(longitude) ||
+        !isInsideUnitedStates(latitude, longitude)
+      ) {
+        saveGeocodeToCache(query, null);
+        return null;
+      }
+
+      const location = {
+        latitude,
+        longitude,
+        name: cleanText(bestResult.name),
+        state: cleanText(bestResult.admin1)
+      };
+
+      saveGeocodeToCache(query, location);
+
+      return location;
     } catch (error) {
       console.warn(
-        `Geocoding failed for "${query}".`,
+        `Unable to geocode "${query}".`,
         error
       );
 
+      /*
+        A temporary network failure should not be cached,
+        because a later refresh may succeed.
+      */
+
       return null;
     } finally {
-      geocodeRequests.delete(
-        requestKey
-      );
+      activeGeocodeRequests.delete(requestKey);
     }
   })();
 
-  geocodeRequests.set(
+  activeGeocodeRequests.set(
     requestKey,
-    request
+    geocodePromise
   );
 
-  return request;
+  return geocodePromise;
 }
 
-async function locateArticle(article) {
-  const candidates =
-    extractLocationCandidates(
-      article.title
-    );
+/* -------------------------------------------------------
+   MATCH ARTICLE TO LOCATION
+------------------------------------------------------- */
 
-  for (const candidate of candidates) {
+async function locateArticle(article) {
+  const locationCandidates =
+    extractLocationCandidates(article.title);
+
+  for (const locationCandidate of locationCandidates) {
     const location =
-      await geocode(candidate);
+      await geocodeLocation(locationCandidate);
 
     if (location) {
       return {
         ...article,
+        extractedLocation: locationCandidate,
         location
       };
     }
@@ -814,40 +943,51 @@ async function locateArticle(article) {
   return null;
 }
 
-async function withConcurrency(
+/* -------------------------------------------------------
+   CONCURRENCY HELPER
+------------------------------------------------------- */
+
+async function processWithConcurrency(
   items,
-  limit,
+  concurrencyLimit,
   worker
 ) {
-  const results =
-    new Array(items.length);
+  if (!items.length) {
+    return [];
+  }
 
-  let currentIndex = 0;
+  const results = new Array(items.length);
+  let nextIndex = 0;
 
   async function runWorker() {
-    while (
-      currentIndex < items.length
-    ) {
-      const itemIndex =
-        currentIndex++;
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
 
-      results[itemIndex] =
-        await worker(
-          items[itemIndex]
+      try {
+        results[currentIndex] = await worker(
+          items[currentIndex],
+          currentIndex
         );
+      } catch (error) {
+        console.warn(
+          "An article could not be processed.",
+          error
+        );
+
+        results[currentIndex] = null;
+      }
     }
   }
 
-  const workerCount = Math.min(
-    limit,
+  const numberOfWorkers = Math.min(
+    concurrencyLimit,
     items.length
   );
 
   await Promise.all(
     Array.from(
-      {
-        length: workerCount
-      },
+      { length: numberOfWorkers },
       () => runWorker()
     )
   );
@@ -855,21 +995,24 @@ async function withConcurrency(
   return results;
 }
 
+/* -------------------------------------------------------
+   SEVERITY
+------------------------------------------------------- */
+
 function getSeverity(title) {
-  const text =
-    title.toLowerCase();
+  const normalizedTitle = title.toLowerCase();
 
   if (
-    /(emergency|evacuation|deadly|catastrophic|life-threatening|dam break|levee breach|flash flood warning)/.test(
-      text
+    /\b(emergency|evacuation|evacuations|deadly|fatal|catastrophic|life-threatening|dam break|levee breach|flash flood warning)\b/i.test(
+      normalizedTitle
     )
   ) {
     return "High";
   }
 
   if (
-    /(warning|severe|major|flood watch|river flooding|coastal flooding|road closure)/.test(
-      text
+    /\b(warning|severe|major|flood watch|river flooding|coastal flooding|road closure|roads closed|state of emergency)\b/i.test(
+      normalizedTitle
     )
   ) {
     return "Moderate";
@@ -878,13 +1021,25 @@ function getSeverity(title) {
   return "Low";
 }
 
-function markerStyle(severity) {
+function getSeverityRank(severity) {
+  if (severity === "High") {
+    return 3;
+  }
+
+  if (severity === "Moderate") {
+    return 2;
+  }
+
+  return 1;
+}
+
+function getMarkerStyle(severity) {
   if (severity === "High") {
     return {
       radius: 9,
-      color: "#8b0000",
+      color: "#7f1d1d",
       fillColor: "#dc2626",
-      fillOpacity: 0.9,
+      fillOpacity: 0.92,
       weight: 2
     };
   }
@@ -894,7 +1049,7 @@ function markerStyle(severity) {
       radius: 8,
       color: "#9a3412",
       fillColor: "#f97316",
-      fillOpacity: 0.88,
+      fillOpacity: 0.9,
       weight: 2
     };
   }
@@ -902,270 +1057,277 @@ function markerStyle(severity) {
   return {
     radius: 7,
     color: "#1e3a8a",
-    fillColor: "#3b82f6",
-    fillOpacity: 0.85,
+    fillColor: "#2563eb",
+    fillOpacity: 0.86,
     weight: 2
   };
 }
 
-function articleAge(date) {
-  const ageInMinutes = Math.max(
+/* -------------------------------------------------------
+   DISPLAY HELPERS
+------------------------------------------------------- */
+
+function formatLocationName(location) {
+  const locationParts = [
+    location.name,
+    location.state
+  ].filter(Boolean);
+
+  return locationParts.join(", ");
+}
+
+function formatArticleAge(date) {
+  const differenceInMinutes = Math.max(
     0,
     Math.floor(
-      (Date.now() -
-        date.getTime()) /
-        60000
+      (Date.now() - date.getTime()) /
+        (60 * 1000)
     )
   );
 
-  if (ageInMinutes < 60) {
-    return (
-      `${Math.max(
-        1,
-        ageInMinutes
-      )} minute` +
-      `${ageInMinutes === 1 ? "" : "s"} ago`
-    );
+  if (differenceInMinutes < 60) {
+    const minutes = Math.max(1, differenceInMinutes);
+
+    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
   }
 
-  const ageInHours =
-    Math.floor(
-      ageInMinutes / 60
-    );
-
-  return (
-    `${ageInHours} hour` +
-    `${ageInHours === 1 ? "" : "s"} ago`
+  const differenceInHours = Math.floor(
+    differenceInMinutes / 60
   );
+
+  return `${differenceInHours} hour${
+    differenceInHours === 1 ? "" : "s"
+  } ago`;
 }
 
-function locationName(location) {
-  return [
-    location.name,
-    location.state
-  ]
-    .filter(Boolean)
-    .join(", ");
+function formatDate(date) {
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
 }
 
-function renderFloodNews(
-  mappedArticles,
-  freshArticleCount
-) {
-  newsList.innerHTML = "";
+/* -------------------------------------------------------
+   RENDER MARKERS
+------------------------------------------------------- */
 
+function renderMarkers(mappedArticles) {
   markersLayer.clearLayers();
 
-  if (!mappedArticles.length) {
-    newsList.innerHTML = `
-      <div class="news-card">
-        <h3>No mappable current flood headlines</h3>
-        <p>
-          ${freshArticleCount} fresh flood-related
-          ${
-            freshArticleCount === 1
-              ? "article was"
-              : "articles were"
-          }
-          found, but no clear United States location
-          could be extracted from the headlines.
+  const articlesByLocation = new Map();
+
+  mappedArticles.forEach((article) => {
+    const locationKey =
+      article.location.latitude.toFixed(3) +
+      "," +
+      article.location.longitude.toFixed(3);
+
+    if (!articlesByLocation.has(locationKey)) {
+      articlesByLocation.set(locationKey, []);
+    }
+
+    articlesByLocation
+      .get(locationKey)
+      .push(article);
+  });
+
+  articlesByLocation.forEach((locationArticles) => {
+    const firstArticle = locationArticles[0];
+
+    const highestSeverity = locationArticles
+      .map((article) => getSeverity(article.title))
+      .sort((severityA, severityB) => {
+        return (
+          getSeverityRank(severityB) -
+          getSeverityRank(severityA)
+        );
+      })[0];
+
+    const popupArticleLinks = locationArticles
+      .slice(0, 6)
+      .map((article) => {
+        return `
+          <li style="margin-bottom: 8px;">
+            <a
+              href="${escapeHtml(article.url)}"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              ${escapeHtml(article.title)}
+            </a>
+          </li>
+        `;
+      })
+      .join("");
+
+    const popupHtml = `
+      <div style="min-width: 230px;">
+        <strong>
+          ${escapeHtml(
+            formatLocationName(firstArticle.location)
+          )}
+        </strong>
+
+        <p style="margin: 6px 0;">
+          Severity:
+          <strong>${escapeHtml(highestSeverity)}</strong>
         </p>
+
+        <ul style="padding-left: 18px; margin-bottom: 4px;">
+          ${popupArticleLinks}
+        </ul>
       </div>
     `;
 
-    map.setView(
-      [39.8283, -98.5795],
-      4
-    );
+    L.circleMarker(
+      [
+        firstArticle.location.latitude,
+        firstArticle.location.longitude
+      ],
+      getMarkerStyle(highestSeverity)
+    )
+      .addTo(markersLayer)
+      .bindPopup(popupHtml);
+  });
+}
+
+/* -------------------------------------------------------
+   RENDER NEWS CARDS
+------------------------------------------------------- */
+
+function renderNewsCards(
+  mappedArticles,
+  totalFreshArticles
+) {
+  newsList.innerHTML = "";
+
+  if (!mappedArticles.length) {
+    newsList.innerHTML = `
+      <article class="news-card">
+        <h3>No mappable flood stories found</h3>
+
+        <p>
+          ${totalFreshArticles} current flood-related
+          ${
+            totalFreshArticles === 1
+              ? "article was"
+              : "articles were"
+          }
+          found, but no clear United States location could
+          be extracted from the available headlines.
+        </p>
+
+        <p>
+          The page will check again automatically.
+        </p>
+      </article>
+    `;
 
     return;
   }
 
-  const locationGroups =
-    new Map();
+  mappedArticles.forEach((article) => {
+    const severity = getSeverity(article.title);
+    const card = document.createElement("article");
 
-  mappedArticles.forEach(
-    (article) => {
-      const locationKey =
-        `${article.location.lat.toFixed(3)},` +
-        `${article.location.lon.toFixed(3)}`;
+    card.className = "news-card";
 
-      if (
-        !locationGroups.has(
-          locationKey
-        )
-      ) {
-        locationGroups.set(
-          locationKey,
-          []
-        );
-      }
+    card.innerHTML = `
+      <span class="badge ${severity.toLowerCase()}">
+        ${escapeHtml(severity)}
+      </span>
 
-      locationGroups
-        .get(locationKey)
-        .push(article);
-    }
-  );
+      <h3>
+        ${escapeHtml(article.title)}
+      </h3>
 
-  locationGroups.forEach(
-    (articles) => {
-      const firstArticle =
-        articles[0];
+      <p>
+        <strong>Mapped location:</strong>
+        ${escapeHtml(
+          formatLocationName(article.location)
+        )}
+      </p>
 
-      const severityLevels =
-        articles.map((article) =>
-          getSeverity(
-            article.title
-          )
-        );
+      <p>
+        <strong>Source:</strong>
+        ${escapeHtml(article.domain)}
+        <br>
 
-      let highestSeverity = "Low";
+        <strong>Published:</strong>
+        ${escapeHtml(formatDate(article.date))}
+        <br>
 
-      if (
-        severityLevels.includes(
-          "High"
-        )
-      ) {
-        highestSeverity = "High";
-      } else if (
-        severityLevels.includes(
-          "Moderate"
-        )
-      ) {
-        highestSeverity =
-          "Moderate";
-      }
+        <strong>Age:</strong>
+        ${escapeHtml(formatArticleAge(article.date))}
+      </p>
 
-      const popupArticles = articles
-        .slice(0, 5)
-        .map((article) => {
-          return `
-            <li>
-              <a
-                href="${escapeHtml(article.url)}"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                ${escapeHtml(article.title)}
-              </a>
-            </li>
-          `;
-        })
-        .join("");
+      <a
+        href="${escapeHtml(article.url)}"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Read source
+      </a>
+    `;
 
-      L.circleMarker(
-        [
-          firstArticle.location.lat,
-          firstArticle.location.lon
-        ],
-        markerStyle(highestSeverity)
-      )
-        .addTo(markersLayer)
-        .bindPopup(`
-          <strong>
-            ${escapeHtml(
-              locationName(
-                firstArticle.location
-              )
-            )}
-          </strong>
-          <br>
-          Severity:
-          ${escapeHtml(
-            highestSeverity
-          )}
-          <ul style="padding-left: 18px;">
-            ${popupArticles}
-          </ul>
-        `);
-    }
-  );
+    newsList.appendChild(card);
+  });
 
-  mappedArticles.forEach(
-    (article) => {
-      const severity =
-        getSeverity(
-          article.title
-        );
+  const updateInformation = document.createElement("p");
 
-      const card =
-        document.createElement(
-          "article"
-        );
+  updateInformation.className = "feed-update-information";
 
-      card.className =
-        "news-card";
-
-      card.innerHTML = `
-        <span class="badge ${severity.toLowerCase()}">
-          ${escapeHtml(severity)}
-        </span>
-
-        <h3>
-          ${escapeHtml(article.title)}
-        </h3>
-
-        <p>
-          <strong>Mapped location:</strong>
-          ${escapeHtml(
-            locationName(
-              article.location
-            )
-          )}
-        </p>
-
-        <p>
-          <strong>Source:</strong>
-          ${escapeHtml(article.domain)}
-          <br>
-
-          <strong>Published:</strong>
-          ${escapeHtml(
-            article.date.toLocaleString()
-          )}
-          (${escapeHtml(
-            articleAge(article.date)
-          )})
-        </p>
-
-        <a
-          href="${escapeHtml(article.url)}"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Read source
-        </a>
-      `;
-
-      newsList.appendChild(card);
-    }
-  );
-
-  const attributionNote =
-    document.createElement("p");
-
-  attributionNote.innerHTML = `
+  updateInformation.innerHTML = `
     <small>
-      News data: GDELT.
-      Geocoding: Open-Meteo.
-      Map: OpenStreetMap contributors.
+      Showing ${mappedArticles.length} mapped article${
+        mappedArticles.length === 1 ? "" : "s"
+      }
+      from the last ${SETTINGS.articleWindowHours} hours.
+      Last updated:
+      ${escapeHtml(
+        lastSuccessfulUpdate
+          ? formatDate(lastSuccessfulUpdate)
+          : "just now"
+      )}.
+      The feed refreshes every 15 minutes.
     </small>
   `;
 
-  newsList.appendChild(
-    attributionNote
+  newsList.appendChild(updateInformation);
+}
+
+/* -------------------------------------------------------
+   RENDER COMPLETE RESULTS
+------------------------------------------------------- */
+
+function renderFloodNews(
+  mappedArticles,
+  totalFreshArticles
+) {
+  renderMarkers(mappedArticles);
+  renderNewsCards(
+    mappedArticles,
+    totalFreshArticles
   );
 
-  const bounds =
-    markersLayer.getBounds();
+  const bounds = markersLayer.getBounds();
 
   if (bounds.isValid()) {
     map.fitBounds(bounds, {
       padding: [40, 40],
       maxZoom: 8
     });
+  } else {
+    map.setView([39.8283, -98.5795], 4);
   }
 }
+
+/* -------------------------------------------------------
+   LOAD NEWS
+------------------------------------------------------- */
 
 async function loadFloodNews() {
   if (loading) {
@@ -1175,41 +1337,47 @@ async function loadFloodNews() {
   loading = true;
 
   newsList.innerHTML = `
-    <p>
-      Loading live United States flood articles
-      from the last ${SETTINGS.hours} hours...
-    </p>
+    <article class="news-card">
+      <h3>Loading live flood news</h3>
+
+      <p>
+        Searching for current United States flood reports
+        from the last ${SETTINGS.articleWindowHours} hours...
+      </p>
+    </article>
   `;
 
   try {
     const freshArticles =
-      await getCurrentArticles();
+      await getCurrentFloodArticles();
 
-    const articlesToLocate =
+    const articlesToGeocode =
       freshArticles.slice(
         0,
-        SETTINGS.maxArticlesToGeocode
+        SETTINGS.maximumArticlesToGeocode
       );
 
-    const locatedArticles =
-      await withConcurrency(
-        articlesToLocate,
+    const geocodedResults =
+      await processWithConcurrency(
+        articlesToGeocode,
         SETTINGS.geocodeConcurrency,
         locateArticle
       );
 
-    const mappedArticles =
-      locatedArticles
-        .filter(Boolean)
-        .sort(
-          (articleA, articleB) =>
-            articleB.date -
-            articleA.date
-        )
-        .slice(
-          0,
-          SETTINGS.maxMappedArticles
+    const mappedArticles = geocodedResults
+      .filter(Boolean)
+      .sort((articleA, articleB) => {
+        return (
+          articleB.date.getTime() -
+          articleA.date.getTime()
         );
+      })
+      .slice(
+        0,
+        SETTINGS.maximumMappedArticles
+      );
+
+    lastSuccessfulUpdate = new Date();
 
     renderFloodNews(
       mappedArticles,
@@ -1217,32 +1385,90 @@ async function loadFloodNews() {
     );
   } catch (error) {
     console.error(
-      "Flood news loading error:",
+      "FloodWatch loading error:",
       error
     );
 
+    markersLayer.clearLayers();
+
     newsList.innerHTML = `
-      <div class="news-card">
-        <h3>
-          Unable to load the live flood feed
-        </h3>
+      <article class="news-card">
+        <h3>Unable to load the live flood feed</h3>
 
         <p>
           ${escapeHtml(
             error.message ||
-              "Please refresh the page and try again."
+              "The live news service could not be reached."
           )}
         </p>
-      </div>
+
+        <button
+          id="retry-flood-news"
+          type="button"
+          style="
+            margin-top: 10px;
+            padding: 10px 16px;
+            border: 0;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 700;
+          "
+        >
+          Try again
+        </button>
+      </article>
     `;
+
+    const retryButton = document.getElementById(
+      "retry-flood-news"
+    );
+
+    if (retryButton) {
+      retryButton.addEventListener(
+        "click",
+        loadFloodNews
+      );
+    }
   } finally {
     loading = false;
   }
 }
 
+/* -------------------------------------------------------
+   INITIAL LOAD AND AUTOMATIC REFRESH
+------------------------------------------------------- */
+
 loadFloodNews();
 
-setInterval(
+window.setInterval(
   loadFloodNews,
-  SETTINGS.refreshMs
+  SETTINGS.refreshIntervalMs
 );
+
+/*
+  Refresh when the user returns to the browser tab,
+  provided the last successful update is older than
+  the configured refresh interval.
+*/
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+
+  if (!lastSuccessfulUpdate) {
+    loadFloodNews();
+    return;
+  }
+
+  const timeSinceLastUpdate =
+    Date.now() -
+    lastSuccessfulUpdate.getTime();
+
+  if (
+    timeSinceLastUpdate >=
+    SETTINGS.refreshIntervalMs
+  ) {
+    loadFloodNews();
+  }
+});
