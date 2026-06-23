@@ -1559,7 +1559,7 @@ function getMarkerStyle(severity) {
   if (severity === "High") {
     return {
       radius: 9,
-      color: "#7f1d1d",
+      color: "#dc2626",
       fillColor: "#dc2626",
       fillOpacity: 0.92,
       weight: 2
@@ -1569,7 +1569,7 @@ function getMarkerStyle(severity) {
   if (severity === "Moderate") {
     return {
       radius: 8,
-      color: "#9a3412",
+      color: "#f97316",
       fillColor: "#f97316",
       fillOpacity: 0.9,
       weight: 2
