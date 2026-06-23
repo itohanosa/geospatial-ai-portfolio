@@ -2,88 +2,53 @@
 
 /*
   FloodWatch Map
-  ---------------------------------------------------------
-  Static GitHub Pages-compatible implementation.
+  -------------------------------------------------------
+  Static GitHub Pages compatible version.
 
-  Workflow:
-  1. Load current flood articles from GDELT using JSONP.
-  2. Avoid browser CORS/fetch failures.
-  3. Keep articles published during the last 24 hours.
-  4. Extract United States locations from headlines.
-  5. Geocode locations with Open-Meteo.
-  6. Plot locations on a Leaflet map.
-  7. Refresh automatically every 15 minutes.
+  Pipeline:
+  1. Fetch recent flood-related news from Google News RSS.
+  2. Convert RSS to JSON using rss2json.
+  3. Fallback to AllOrigins + XML parsing if needed.
+  4. Filter to the last 24 hours.
+  5. Extract U.S. locations from headlines.
+  6. Geocode those locations.
+  7. Plot markers on the map.
+  8. Refresh every 15 minutes.
 */
 
 const SETTINGS = {
   articleWindowHours: 24,
   refreshIntervalMs: 15 * 60 * 1000,
-  gdeltTimeoutMs: 30000,
+  feedTimeoutMs: 20000,
   geocodeTimeoutMs: 15000,
-  maximumGdeltArticles: 100,
-  maximumArticlesToGeocode: 40,
-  maximumMappedArticles: 30,
+  maxArticles: 60,
+  maxArticlesToGeocode: 35,
+  maxMappedArticles: 25,
   geocodeConcurrency: 4,
-  geocodeCacheKey: "floodwatch-geocode-cache-v4",
+  geocodeCacheKey: "floodwatch-geocode-cache-v5",
   geocodeCacheLifetimeMs: 30 * 24 * 60 * 60 * 1000
 };
 
-/* -------------------------------------------------------
-   REQUIRED PAGE ELEMENTS
-------------------------------------------------------- */
+const FEED_QUERY =
+  '("flood" OR "flooding" OR "flash flood" OR "flood warning" OR "flood watch" OR "river flooding" OR "coastal flooding") when:1d';
 
-const mapElement = document.getElementById("map");
-const newsList = document.getElementById("news-list");
+const GOOGLE_NEWS_RSS_URL =
+  "https://news.google.com/rss/search?q=" +
+  encodeURIComponent(FEED_QUERY) +
+  "&hl=en-US&gl=US&ceid=US:en";
 
-if (!mapElement) {
-  throw new Error('The page must contain an element with id="map".');
-}
-
-if (!newsList) {
-  throw new Error('The page must contain an element with id="news-list".');
-}
-
-if (typeof L === "undefined") {
-  throw new Error(
-    "Leaflet is not loaded. Make sure Leaflet loads before script.js."
-  );
-}
-
-/* -------------------------------------------------------
-   LEAFLET MAP
-------------------------------------------------------- */
-
-const map = L.map("map", {
-  zoomControl: true,
-  minZoom: 3
-}).setView([39.8283, -98.5795], 4);
-
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19,
-  attribution: "&copy; OpenStreetMap contributors"
-}).addTo(map);
-
-const markersLayer = L.layerGroup().addTo(map);
-
-/* -------------------------------------------------------
-   SEARCH SETTINGS
-------------------------------------------------------- */
-
-const FLOOD_QUERY =
-  '("flood" OR "flooding" OR "flash flood" OR "flood warning" OR "flood watch" OR "river flooding" OR "coastal flooding") sourcecountry:US';
+const RSS2JSON_URL =
+  "https://api.rss2json.com/v1/api.json?rss_url=" +
+  encodeURIComponent(GOOGLE_NEWS_RSS_URL);
 
 const FLOOD_TERMS =
-  /\b(flood|flooding|flooded|flash flood|river flooding|coastal flooding|flood warning|flood watch|inundation|inundated|high water|levee breach|dam break)\b/i;
+  /\b(flood|flooding|flooded|flash flood|river flooding|coastal flooding|flood warning|flood watch|inundation|high water|levee breach|dam break)\b/i;
 
 const FALSE_POSITIVE_TERMS =
   /\bflood(?:ed|ing)?\s+(?:with|of)\s+(?:calls|comments|complaints|donations|emails|messages|orders|requests|support|tributes|visitors|votes)\b/i;
 
 const HISTORICAL_TERMS =
   /\b(anniversary|archive|archived|flashback|historical|history of|last year|retrospective|years ago)\b/i;
-
-/* -------------------------------------------------------
-   UNITED STATES DATA
-------------------------------------------------------- */
 
 const STATE_ABBREVIATIONS = Object.freeze({
   AL: "Alabama",
@@ -140,26 +105,42 @@ const STATE_ABBREVIATIONS = Object.freeze({
 });
 
 const STATE_NAMES = Object.values(STATE_ABBREVIATIONS).sort(
-  (stateA, stateB) => stateB.length - stateA.length
+  (a, b) => b.length - a.length
 );
 
-const STATE_ABBREVIATION_PATTERN =
-  Object.keys(STATE_ABBREVIATIONS).join("|");
-
+const STATE_ABBREVIATION_PATTERN = Object.keys(STATE_ABBREVIATIONS).join("|");
 const STATE_NAME_PATTERN = STATE_NAMES.map(escapeRegex).join("|");
 
-/* -------------------------------------------------------
-   APPLICATION STATE
-------------------------------------------------------- */
+const mapElement = document.getElementById("map");
+const newsList = document.getElementById("news-list");
+
+if (!mapElement) {
+  throw new Error('The page must contain an element with id="map".');
+}
+
+if (!newsList) {
+  throw new Error('The page must contain an element with id="news-list".');
+}
+
+if (typeof L === "undefined") {
+  throw new Error("Leaflet is not loaded before script.js.");
+}
+
+const map = L.map("map", {
+  zoomControl: true,
+  minZoom: 3
+}).setView([39.8283, -98.5795], 4);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: "&copy; OpenStreetMap contributors"
+}).addTo(map);
+
+const markersLayer = L.layerGroup().addTo(map);
 
 let loading = false;
 let lastSuccessfulUpdate = null;
-
 const activeGeocodeRequests = new Map();
-
-/* -------------------------------------------------------
-   GENERAL HELPERS
-------------------------------------------------------- */
 
 function escapeRegex(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -175,26 +156,19 @@ function escapeHtml(value) {
 }
 
 function cleanText(value) {
-  const temporaryElement = document.createElement("div");
-
-  temporaryElement.innerHTML = String(value || "");
-
-  return (temporaryElement.textContent || "")
+  const div = document.createElement("div");
+  div.innerHTML = String(value || "");
+  return (div.textContent || div.innerText || "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function safeUrl(value) {
   try {
-    const parsedUrl = new URL(String(value || ""));
-
-    if (
-      parsedUrl.protocol === "https:" ||
-      parsedUrl.protocol === "http:"
-    ) {
-      return parsedUrl.href;
+    const url = new URL(String(value || ""));
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      return url.href;
     }
-
     return "";
   } catch {
     return "";
@@ -209,253 +183,155 @@ function getDomain(url) {
   }
 }
 
-function createUniqueCallbackName() {
-  return (
-    "__floodwatchGdeltCallback_" +
-    Date.now() +
-    "_" +
-    Math.random().toString(36).slice(2)
-  );
+function stripGoogleNewsSourceSuffix(title) {
+  const cleaned = cleanText(title);
+  return cleaned.replace(/\s*-\s*[^-]+$/, "").trim();
 }
 
-/* -------------------------------------------------------
-   GDELT JSONP
-
-   JSONP uses a dynamically inserted script element.
-   It does not use fetch(), so it avoids the browser
-   cross-origin error shown in the screenshot.
-------------------------------------------------------- */
-
-function buildGdeltJsonpUrl(callbackName) {
-  const parameters = new URLSearchParams({
-    query: FLOOD_QUERY,
-    mode: "ArtList",
-    format: "jsonp",
-    callback: callbackName,
-    maxrecords: String(SETTINGS.maximumGdeltArticles),
-    sort: "DateDesc",
-    timespan: `${SETTINGS.articleWindowHours}h`,
-    _: String(Date.now())
-  });
-
-  return (
-    "https://api.gdeltproject.org/api/v2/doc/doc?" +
-    parameters.toString()
-  );
+function parseDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
 }
 
-function fetchGdeltWithJsonp() {
-  return new Promise((resolve, reject) => {
-    const callbackName = createUniqueCallbackName();
-    const scriptElement = document.createElement("script");
+async function fetchJson(url, timeoutMs) {
+  const controller = new AbortController();
 
-    let requestCompleted = false;
+  const timer = window.setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
 
-    const timeout = window.setTimeout(() => {
-      if (requestCompleted) {
-        return;
-      }
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal
+    });
 
-      requestCompleted = true;
-      cleanup();
-
-      reject(
-        new Error(
-          "GDELT did not respond within 30 seconds. Please try again shortly."
-        )
-      );
-    }, SETTINGS.gdeltTimeoutMs);
-
-    function cleanup() {
-      window.clearTimeout(timeout);
-
-      if (scriptElement.parentNode) {
-        scriptElement.parentNode.removeChild(scriptElement);
-      }
-
-      try {
-        delete window[callbackName];
-      } catch {
-        window[callbackName] = undefined;
-      }
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
 
-    window[callbackName] = function handleGdeltResponse(data) {
-      if (requestCompleted) {
-        return;
-      }
+    return await response.json();
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
 
-      requestCompleted = true;
-      cleanup();
-      resolve(data);
+async function fetchText(url, timeoutMs) {
+  const controller = new AbortController();
+
+  const timer = window.setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return await response.text();
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+/* -------------------------------------------------------
+   FEED FETCHING
+------------------------------------------------------- */
+
+async function fetchArticlesFromRss2Json() {
+  const data = await fetchJson(RSS2JSON_URL, SETTINGS.feedTimeoutMs);
+
+  const items = Array.isArray(data?.items) ? data.items : [];
+
+  return items.map((item) => {
+    const title = stripGoogleNewsSourceSuffix(item.title || "");
+    const url = safeUrl(item.link || "");
+    const date = parseDate(item.pubDate);
+    const source =
+      cleanText(item.author || "") ||
+      getDomain(url);
+
+    return {
+      title,
+      url,
+      date,
+      domain: source
     };
-
-    scriptElement.src = buildGdeltJsonpUrl(callbackName);
-    scriptElement.async = true;
-
-    scriptElement.onerror = function handleGdeltError() {
-      if (requestCompleted) {
-        return;
-      }
-
-      requestCompleted = true;
-      cleanup();
-
-      reject(
-        new Error(
-          "The GDELT service could not be reached. This is usually a temporary GDELT connection problem."
-        )
-      );
-    };
-
-    document.head.appendChild(scriptElement);
   });
 }
 
-/* -------------------------------------------------------
-   ARTICLE DATE PARSING
-------------------------------------------------------- */
+async function fetchArticlesFromAllOriginsXml() {
+  const proxyUrl =
+    "https://api.allorigins.win/raw?url=" +
+    encodeURIComponent(GOOGLE_NEWS_RSS_URL);
 
-function parseArticleDate(value) {
-  const rawDate = String(value || "").trim();
+  const xmlText = await fetchText(proxyUrl, SETTINGS.feedTimeoutMs);
 
-  if (!rawDate) {
-    return null;
-  }
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(xmlText, "text/xml");
+  const items = Array.from(xml.querySelectorAll("item"));
 
-  /*
-    Common GDELT examples:
-    20260623T041500Z
-    20260623041500
-  */
-
-  const compactMatch = rawDate.match(
-    /^(\d{4})(\d{2})(\d{2})T?(\d{2})(\d{2})(\d{2})(?:\.\d+)?Z?$/
-  );
-
-  if (compactMatch) {
-    return new Date(
-      Date.UTC(
-        Number(compactMatch[1]),
-        Number(compactMatch[2]) - 1,
-        Number(compactMatch[3]),
-        Number(compactMatch[4]),
-        Number(compactMatch[5]),
-        Number(compactMatch[6])
-      )
+  return items.map((item) => {
+    const title = stripGoogleNewsSourceSuffix(
+      item.querySelector("title")?.textContent || ""
     );
-  }
+    const url = safeUrl(item.querySelector("link")?.textContent || "");
+    const date = parseDate(item.querySelector("pubDate")?.textContent || "");
+    const source = getDomain(url);
 
-  const parsedDate = new Date(rawDate);
-
-  if (Number.isNaN(parsedDate.getTime())) {
-    return null;
-  }
-
-  return parsedDate;
+    return {
+      title,
+      url,
+      date,
+      domain: source
+    };
+  });
 }
 
-/* -------------------------------------------------------
-   NORMALIZE GDELT ARTICLES
-------------------------------------------------------- */
-
-function normalizeGdeltArticles(data) {
-  let records = [];
-
-  if (Array.isArray(data?.articles)) {
-    records = data.articles;
-  } else if (Array.isArray(data?.items)) {
-    records = data.items;
-  } else if (Array.isArray(data)) {
-    records = data;
+async function fetchFloodArticles() {
+  try {
+    return await fetchArticlesFromRss2Json();
+  } catch (error) {
+    console.warn("rss2json failed, trying AllOrigins XML fallback...", error);
+    return await fetchArticlesFromAllOriginsXml();
   }
-
-  return records
-    .map((record) => {
-      const url = safeUrl(
-        record.url ||
-          record.link ||
-          record.external_url ||
-          record.articleurl
-      );
-
-      const title = cleanText(
-        record.title ||
-          record.name ||
-          record.headline
-      );
-
-      const date = parseArticleDate(
-        record.seendate ||
-          record.date ||
-          record.pubDate ||
-          record.date_published ||
-          record.published
-      );
-
-      const domain =
-        cleanText(record.domain) ||
-        getDomain(url);
-
-      return {
-        title,
-        url,
-        date,
-        domain
-      };
-    })
-    .filter((article) => {
-      return Boolean(
-        article.title &&
-          article.url &&
-          article.date &&
-          !Number.isNaN(article.date.getTime())
-      );
-    });
 }
 
 /* -------------------------------------------------------
    ARTICLE FILTERING
 ------------------------------------------------------- */
 
-function isArticleFresh(article, currentTime) {
-  const ageMilliseconds =
-    currentTime.getTime() -
-    article.date.getTime();
+function isFreshArticle(article, now) {
+  if (!article.date) return false;
 
-  const maximumAgeMilliseconds =
-    SETTINGS.articleWindowHours *
-    60 *
-    60 *
-    1000;
+  const ageMs = now.getTime() - article.date.getTime();
+  const maxAgeMs = SETTINGS.articleWindowHours * 60 * 60 * 1000;
+  const futureToleranceMs = -15 * 60 * 1000;
 
-  const futureDateTolerance =
-    -15 * 60 * 1000;
-
-  return (
-    ageMilliseconds >= futureDateTolerance &&
-    ageMilliseconds <= maximumAgeMilliseconds
-  );
+  return ageMs >= futureToleranceMs && ageMs <= maxAgeMs;
 }
 
-function isHistoricalArticle(article, currentTime) {
-  if (HISTORICAL_TERMS.test(article.title)) {
-    return true;
-  }
+function isHistoricalArticle(article, now) {
+  if (HISTORICAL_TERMS.test(article.title)) return true;
 
-  const currentYear = currentTime.getUTCFullYear();
+  const currentYear = now.getUTCFullYear();
+  const matches = `${article.title} ${article.url}`.match(/\b(?:19|20)\d{2}\b/g) || [];
 
-  const foundYears =
-    `${article.title} ${article.url}`.match(/\b(?:19|20)\d{2}\b/g) || [];
-
-  return foundYears.some((year) => {
-    return Number(year) < currentYear;
-  });
+  return matches.some((year) => Number(year) < currentYear);
 }
 
 function removeDuplicateArticles(articles) {
-  const knownUrls = new Set();
-  const knownTitles = new Set();
+  const seenUrls = new Set();
+  const seenTitles = new Set();
 
   return articles.filter((article) => {
     const normalizedUrl = article.url
@@ -468,33 +344,31 @@ function removeDuplicateArticles(articles) {
       .replace(/[^a-z0-9]+/g, " ")
       .trim();
 
-    if (
-      knownUrls.has(normalizedUrl) ||
-      knownTitles.has(normalizedTitle)
-    ) {
+    if (seenUrls.has(normalizedUrl) || seenTitles.has(normalizedTitle)) {
       return false;
     }
 
-    knownUrls.add(normalizedUrl);
-    knownTitles.add(normalizedTitle);
+    seenUrls.add(normalizedUrl);
+    seenTitles.add(normalizedTitle);
 
     return true;
   });
 }
 
 async function getCurrentFloodArticles() {
-  const data = await fetchGdeltWithJsonp();
-  const currentTime = new Date();
+  const now = new Date();
+
+  const articles = await fetchFloodArticles();
 
   return removeDuplicateArticles(
-    normalizeGdeltArticles(data)
-      .filter((article) => isArticleFresh(article, currentTime))
-      .filter((article) => !isHistoricalArticle(article, currentTime))
+    articles
+      .filter((article) => article.title && article.url && article.date)
+      .filter((article) => isFreshArticle(article, now))
+      .filter((article) => !isHistoricalArticle(article, now))
       .filter((article) => FLOOD_TERMS.test(article.title))
       .filter((article) => !FALSE_POSITIVE_TERMS.test(article.title))
-      .sort((articleA, articleB) => {
-        return articleB.date.getTime() - articleA.date.getTime();
-      })
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, SETTINGS.maxArticles)
   );
 }
 
@@ -514,19 +388,13 @@ function cleanLocationCandidate(value) {
     )
     .trim();
 
-  const locationWords = location
-    .split(/\s+/)
-    .filter(Boolean);
+  const words = location.split(/\s+/).filter(Boolean);
 
-  if (locationWords.length > 7) {
-    location = locationWords.slice(-7).join(" ");
+  if (words.length > 7) {
+    location = words.slice(-7).join(" ");
   }
 
-  if (
-    !location ||
-    location.length < 2 ||
-    location.length > 80
-  ) {
+  if (!location || location.length < 2 || location.length > 80) {
     return "";
   }
 
@@ -545,30 +413,18 @@ function extractLocationCandidates(title) {
   const candidates = [];
 
   function addCandidate(candidate) {
-    const cleanedCandidate =
-      cleanLocationCandidate(candidate);
+    const cleaned = cleanLocationCandidate(candidate);
 
-    if (!cleanedCandidate) {
-      return;
-    }
+    if (!cleaned) return;
 
-    const duplicate = candidates.some((existingCandidate) => {
-      return (
-        existingCandidate.toLowerCase() ===
-        cleanedCandidate.toLowerCase()
-      );
-    });
+    const exists = candidates.some(
+      (value) => value.toLowerCase() === cleaned.toLowerCase()
+    );
 
-    if (!duplicate) {
-      candidates.push(cleanedCandidate);
+    if (!exists) {
+      candidates.push(cleaned);
     }
   }
-
-  /*
-    Example:
-    Baltimore, MD
-    Austin, TX
-  */
 
   const cityStateAbbreviationRegex = new RegExp(
     `([A-Z][A-Za-z.'’\\-]*(?:\\s+(?:[A-Z][A-Za-z.'’\\-]*|of|the)){0,4}),\\s*(${STATE_ABBREVIATION_PATTERN})\\b`,
@@ -578,15 +434,8 @@ function extractLocationCandidates(title) {
   for (const match of title.matchAll(cityStateAbbreviationRegex)) {
     const city = match[1];
     const state = STATE_ABBREVIATIONS[match[2]];
-
     addCandidate(`${city}, ${state}`);
   }
-
-  /*
-    Example:
-    Baltimore, Maryland
-    Austin, Texas
-  */
 
   const cityStateNameRegex = new RegExp(
     `([A-Z][A-Za-z.'’\\-]*(?:\\s+(?:[A-Z][A-Za-z.'’\\-]*|of|the)){0,4}),\\s*(${STATE_NAME_PATTERN})\\b`,
@@ -597,41 +446,21 @@ function extractLocationCandidates(title) {
     addCandidate(`${match[1]}, ${match[2]}`);
   }
 
-  /*
-    Example:
-    Flooding in Baltimore
-    Flood warning near Houston
-    High water across Louisiana
-  */
-
-  const prepositionLocationRegex =
+  const prepositionRegex =
     /\b(?:in|near|around|outside|across|throughout|for|along|from)\s+([^:;|–—-]{2,80})/gi;
 
-  for (const match of title.matchAll(prepositionLocationRegex)) {
+  for (const match of title.matchAll(prepositionRegex)) {
     addCandidate(match[1]);
   }
 
-  /*
-    Example:
-    Flash flooding hits Houston
-    Flooding threatens New Orleans
-  */
-
-  const impactLocationRegex =
+  const impactRegex =
     /\b(?:hits?|strikes?|swamps?|inundates?|threatens?|affects?)\s+([A-Z][^:;|–—-]{1,70})/g;
 
-  for (const match of title.matchAll(impactLocationRegex)) {
+  for (const match of title.matchAll(impactRegex)) {
     addCandidate(match[1]);
   }
 
-  /*
-    Search for complete state names anywhere in the headline.
-  */
-
-  const stateNameRegex = new RegExp(
-    `\\b(${STATE_NAME_PATTERN})\\b`,
-    "gi"
-  );
+  const stateNameRegex = new RegExp(`\\b(${STATE_NAME_PATTERN})\\b`, "gi");
 
   for (const match of title.matchAll(stateNameRegex)) {
     addCandidate(match[1]);
@@ -646,11 +475,7 @@ function extractLocationCandidates(title) {
 
 function readGeocodeCache() {
   try {
-    const cacheText = localStorage.getItem(
-      SETTINGS.geocodeCacheKey
-    );
-
-    return cacheText ? JSON.parse(cacheText) : {};
+    return JSON.parse(localStorage.getItem(SETTINGS.geocodeCacheKey) || "{}");
   } catch {
     return {};
   }
@@ -658,20 +483,17 @@ function readGeocodeCache() {
 
 function getCachedGeocode(query) {
   const cache = readGeocodeCache();
-  const cacheEntry = cache[query.toLowerCase()];
+  const entry = cache[query.toLowerCase()];
 
-  if (!cacheEntry) {
+  if (!entry) return undefined;
+
+  const age = Date.now() - Number(entry.savedAt || 0);
+
+  if (age > SETTINGS.geocodeCacheLifetimeMs) {
     return undefined;
   }
 
-  const cacheAge =
-    Date.now() - Number(cacheEntry.savedAt || 0);
-
-  if (cacheAge > SETTINGS.geocodeCacheLifetimeMs) {
-    return undefined;
-  }
-
-  return cacheEntry.value;
+  return entry.value;
 }
 
 function saveGeocodeToCache(query, value) {
@@ -683,93 +505,41 @@ function saveGeocodeToCache(query, value) {
       value
     };
 
-    const trimmedEntries = Object.entries(cache)
-      .sort((entryA, entryB) => {
-        return (
-          Number(entryB[1].savedAt || 0) -
-          Number(entryA[1].savedAt || 0)
-        );
-      })
+    const trimmed = Object.entries(cache)
+      .sort((a, b) => Number(b[1].savedAt || 0) - Number(a[1].savedAt || 0))
       .slice(0, 500);
 
     localStorage.setItem(
       SETTINGS.geocodeCacheKey,
-      JSON.stringify(Object.fromEntries(trimmedEntries))
+      JSON.stringify(Object.fromEntries(trimmed))
     );
   } catch (error) {
-    console.warn("Unable to save geocoding cache.", error);
+    console.warn("Could not save geocode cache.", error);
   }
 }
 
-/* -------------------------------------------------------
-   UNITED STATES BOUNDARIES
-------------------------------------------------------- */
-
-function isInsideUnitedStates(latitude, longitude) {
-  const continentalUnitedStates =
-    latitude >= 24 &&
-    latitude <= 50 &&
-    longitude >= -125 &&
-    longitude <= -66;
+function isInsideUnitedStates(lat, lon) {
+  const continental =
+    lat >= 24 && lat <= 50 && lon >= -125 && lon <= -66;
 
   const alaska =
-    latitude >= 51 &&
-    latitude <= 72 &&
-    longitude >= -170 &&
-    longitude <= -129;
+    lat >= 51 && lat <= 72 && lon >= -170 && lon <= -129;
 
   const hawaii =
-    latitude >= 18 &&
-    latitude <= 23 &&
-    longitude >= -161 &&
-    longitude <= -154;
+    lat >= 18 && lat <= 23 && lon >= -161 && lon <= -154;
 
-  return (
-    continentalUnitedStates ||
-    alaska ||
-    hawaii
-  );
+  return continental || alaska || hawaii;
 }
 
 /* -------------------------------------------------------
-   FETCH JSON FOR GEOCODING ONLY
-------------------------------------------------------- */
-
-async function fetchJson(url, timeoutMilliseconds) {
-  const controller = new AbortController();
-
-  const timeout = window.setTimeout(() => {
-    controller.abort();
-  }, timeoutMilliseconds);
-
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      cache: "no-store",
-      signal: controller.signal
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `Request returned HTTP ${response.status}.`
-      );
-    }
-
-    return await response.json();
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
-
-/* -------------------------------------------------------
-   OPEN-METEO GEOCODING
+   GEOCODING
 ------------------------------------------------------- */
 
 async function geocodeLocation(query) {
-  const cachedResult = getCachedGeocode(query);
+  const cached = getCachedGeocode(query);
 
-  if (cachedResult !== undefined) {
-    return cachedResult;
+  if (cached !== undefined) {
+    return cached;
   }
 
   const requestKey = query.toLowerCase();
@@ -778,9 +548,9 @@ async function geocodeLocation(query) {
     return activeGeocodeRequests.get(requestKey);
   }
 
-  const geocodePromise = (async () => {
+  const promise = (async () => {
     try {
-      const parameters = new URLSearchParams({
+      const params = new URLSearchParams({
         name: query,
         count: "10",
         language: "en",
@@ -790,19 +560,14 @@ async function geocodeLocation(query) {
 
       const url =
         "https://geocoding-api.open-meteo.com/v1/search?" +
-        parameters.toString();
+        params.toString();
 
-      const data = await fetchJson(
-        url,
-        SETTINGS.geocodeTimeoutMs
-      );
+      const data = await fetchJson(url, SETTINGS.geocodeTimeoutMs);
 
       const results = Array.isArray(data?.results)
-        ? data.results.filter((result) => {
-            return (
-              String(result.country_code || "").toUpperCase() === "US"
-            );
-          })
+        ? data.results.filter(
+            (item) => String(item.country_code || "").toUpperCase() === "US"
+          )
         : [];
 
       const queryParts = query
@@ -813,17 +578,12 @@ async function geocodeLocation(query) {
       const requestedPlace = queryParts[0] || "";
       const requestedState = queryParts[1] || "";
 
-      const rankedResults = results
-        .map((result, originalIndex) => {
-          const resultName = String(
-            result.name || ""
-          ).toLowerCase();
+      const ranked = results
+        .map((item, index) => {
+          const resultName = String(item.name || "").toLowerCase();
+          const resultState = String(item.admin1 || "").toLowerCase();
 
-          const resultState = String(
-            result.admin1 || ""
-          ).toLowerCase();
-
-          let score = -originalIndex;
+          let score = -index;
 
           if (resultName === requestedPlace) {
             score += 100;
@@ -834,46 +594,32 @@ async function geocodeLocation(query) {
             score += 40;
           }
 
-          if (
-            requestedState &&
-            resultState === requestedState
-          ) {
+          if (requestedState && resultState === requestedState) {
             score += 80;
           }
 
-          if (
-            String(result.feature_code || "").startsWith("PPL")
-          ) {
+          if (String(item.feature_code || "").startsWith("PPL")) {
             score += 20;
           }
 
-          const population = Number(result.population || 0);
-
+          const population = Number(item.population || 0);
           if (population > 0) {
-            score += Math.min(
-              20,
-              Math.log10(population + 1) * 2
-            );
+            score += Math.min(20, Math.log10(population + 1) * 2);
           }
 
-          return {
-            result,
-            score
-          };
+          return { item, score };
         })
-        .sort((resultA, resultB) => {
-          return resultB.score - resultA.score;
-        });
+        .sort((a, b) => b.score - a.score);
 
-      const bestResult = rankedResults[0]?.result;
+      const best = ranked[0]?.item;
 
-      if (!bestResult) {
+      if (!best) {
         saveGeocodeToCache(query, null);
         return null;
       }
 
-      const latitude = Number(bestResult.latitude);
-      const longitude = Number(bestResult.longitude);
+      const latitude = Number(best.latitude);
+      const longitude = Number(best.longitude);
 
       if (
         !Number.isFinite(latitude) ||
@@ -887,54 +633,34 @@ async function geocodeLocation(query) {
       const location = {
         latitude,
         longitude,
-        name: cleanText(bestResult.name),
-        state: cleanText(bestResult.admin1)
+        name: cleanText(best.name),
+        state: cleanText(best.admin1)
       };
 
       saveGeocodeToCache(query, location);
-
       return location;
     } catch (error) {
-      console.warn(
-        `Unable to geocode "${query}".`,
-        error
-      );
-
-      /*
-        A temporary network failure should not be cached,
-        because a later refresh may succeed.
-      */
-
+      console.warn(`Unable to geocode "${query}".`, error);
       return null;
     } finally {
       activeGeocodeRequests.delete(requestKey);
     }
   })();
 
-  activeGeocodeRequests.set(
-    requestKey,
-    geocodePromise
-  );
-
-  return geocodePromise;
+  activeGeocodeRequests.set(requestKey, promise);
+  return promise;
 }
 
-/* -------------------------------------------------------
-   MATCH ARTICLE TO LOCATION
-------------------------------------------------------- */
-
 async function locateArticle(article) {
-  const locationCandidates =
-    extractLocationCandidates(article.title);
+  const candidates = extractLocationCandidates(article.title);
 
-  for (const locationCandidate of locationCandidates) {
-    const location =
-      await geocodeLocation(locationCandidate);
+  for (const candidate of candidates) {
+    const location = await geocodeLocation(candidate);
 
     if (location) {
       return {
         ...article,
-        extractedLocation: locationCandidate,
+        extractedLocation: candidate,
         location
       };
     }
@@ -943,18 +669,8 @@ async function locateArticle(article) {
   return null;
 }
 
-/* -------------------------------------------------------
-   CONCURRENCY HELPER
-------------------------------------------------------- */
-
-async function processWithConcurrency(
-  items,
-  concurrencyLimit,
-  worker
-) {
-  if (!items.length) {
-    return [];
-  }
+async function processWithConcurrency(items, limit, worker) {
+  if (!items.length) return [];
 
   const results = new Array(items.length);
   let nextIndex = 0;
@@ -965,46 +681,33 @@ async function processWithConcurrency(
       nextIndex += 1;
 
       try {
-        results[currentIndex] = await worker(
-          items[currentIndex],
-          currentIndex
-        );
+        results[currentIndex] = await worker(items[currentIndex], currentIndex);
       } catch (error) {
-        console.warn(
-          "An article could not be processed.",
-          error
-        );
-
+        console.warn("Unable to process article.", error);
         results[currentIndex] = null;
       }
     }
   }
 
-  const numberOfWorkers = Math.min(
-    concurrencyLimit,
-    items.length
-  );
+  const workerCount = Math.min(limit, items.length);
 
   await Promise.all(
-    Array.from(
-      { length: numberOfWorkers },
-      () => runWorker()
-    )
+    Array.from({ length: workerCount }, () => runWorker())
   );
 
   return results;
 }
 
 /* -------------------------------------------------------
-   SEVERITY
+   SEVERITY + FORMATTING
 ------------------------------------------------------- */
 
 function getSeverity(title) {
-  const normalizedTitle = title.toLowerCase();
+  const lower = title.toLowerCase();
 
   if (
     /\b(emergency|evacuation|evacuations|deadly|fatal|catastrophic|life-threatening|dam break|levee breach|flash flood warning)\b/i.test(
-      normalizedTitle
+      lower
     )
   ) {
     return "High";
@@ -1012,7 +715,7 @@ function getSeverity(title) {
 
   if (
     /\b(warning|severe|major|flood watch|river flooding|coastal flooding|road closure|roads closed|state of emergency)\b/i.test(
-      normalizedTitle
+      lower
     )
   ) {
     return "Moderate";
@@ -1022,14 +725,8 @@ function getSeverity(title) {
 }
 
 function getSeverityRank(severity) {
-  if (severity === "High") {
-    return 3;
-  }
-
-  if (severity === "Moderate") {
-    return 2;
-  }
-
+  if (severity === "High") return 3;
+  if (severity === "Moderate") return 2;
   return 1;
 }
 
@@ -1063,41 +760,8 @@ function getMarkerStyle(severity) {
   };
 }
 
-/* -------------------------------------------------------
-   DISPLAY HELPERS
-------------------------------------------------------- */
-
 function formatLocationName(location) {
-  const locationParts = [
-    location.name,
-    location.state
-  ].filter(Boolean);
-
-  return locationParts.join(", ");
-}
-
-function formatArticleAge(date) {
-  const differenceInMinutes = Math.max(
-    0,
-    Math.floor(
-      (Date.now() - date.getTime()) /
-        (60 * 1000)
-    )
-  );
-
-  if (differenceInMinutes < 60) {
-    const minutes = Math.max(1, differenceInMinutes);
-
-    return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
-  }
-
-  const differenceInHours = Math.floor(
-    differenceInMinutes / 60
-  );
-
-  return `${differenceInHours} hour${
-    differenceInHours === 1 ? "" : "s"
-  } ago`;
+  return [location.name, location.state].filter(Boolean).join(", ");
 }
 
 function formatDate(date) {
@@ -1110,52 +774,56 @@ function formatDate(date) {
   });
 }
 
+function formatAge(date) {
+  const minutes = Math.max(
+    0,
+    Math.floor((Date.now() - date.getTime()) / (60 * 1000))
+  );
+
+  if (minutes < 60) {
+    const m = Math.max(1, minutes);
+    return `${m} minute${m === 1 ? "" : "s"} ago`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+}
+
 /* -------------------------------------------------------
-   RENDER MARKERS
+   RENDERING
 ------------------------------------------------------- */
 
 function renderMarkers(mappedArticles) {
   markersLayer.clearLayers();
 
-  const articlesByLocation = new Map();
+  const grouped = new Map();
 
   mappedArticles.forEach((article) => {
-    const locationKey =
+    const key =
       article.location.latitude.toFixed(3) +
       "," +
       article.location.longitude.toFixed(3);
 
-    if (!articlesByLocation.has(locationKey)) {
-      articlesByLocation.set(locationKey, []);
+    if (!grouped.has(key)) {
+      grouped.set(key, []);
     }
 
-    articlesByLocation
-      .get(locationKey)
-      .push(article);
+    grouped.get(key).push(article);
   });
 
-  articlesByLocation.forEach((locationArticles) => {
-    const firstArticle = locationArticles[0];
+  grouped.forEach((articles) => {
+    const first = articles[0];
 
-    const highestSeverity = locationArticles
+    const topSeverity = articles
       .map((article) => getSeverity(article.title))
-      .sort((severityA, severityB) => {
-        return (
-          getSeverityRank(severityB) -
-          getSeverityRank(severityA)
-        );
-      })[0];
+      .sort((a, b) => getSeverityRank(b) - getSeverityRank(a))[0];
 
-    const popupArticleLinks = locationArticles
+    const popupItems = articles
       .slice(0, 6)
       .map((article) => {
         return `
-          <li style="margin-bottom: 8px;">
-            <a
-              href="${escapeHtml(article.url)}"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
+          <li style="margin-bottom:8px;">
+            <a href="${escapeHtml(article.url)}" target="_blank" rel="noopener noreferrer">
               ${escapeHtml(article.title)}
             </a>
           </li>
@@ -1164,68 +832,41 @@ function renderMarkers(mappedArticles) {
       .join("");
 
     const popupHtml = `
-      <div style="min-width: 230px;">
-        <strong>
-          ${escapeHtml(
-            formatLocationName(firstArticle.location)
-          )}
-        </strong>
-
-        <p style="margin: 6px 0;">
-          Severity:
-          <strong>${escapeHtml(highestSeverity)}</strong>
+      <div style="min-width:230px;">
+        <strong>${escapeHtml(formatLocationName(first.location))}</strong>
+        <p style="margin:6px 0;">
+          Severity: <strong>${escapeHtml(topSeverity)}</strong>
         </p>
-
-        <ul style="padding-left: 18px; margin-bottom: 4px;">
-          ${popupArticleLinks}
+        <ul style="padding-left:18px; margin-bottom:4px;">
+          ${popupItems}
         </ul>
       </div>
     `;
 
     L.circleMarker(
-      [
-        firstArticle.location.latitude,
-        firstArticle.location.longitude
-      ],
-      getMarkerStyle(highestSeverity)
+      [first.location.latitude, first.location.longitude],
+      getMarkerStyle(topSeverity)
     )
       .addTo(markersLayer)
       .bindPopup(popupHtml);
   });
 }
 
-/* -------------------------------------------------------
-   RENDER NEWS CARDS
-------------------------------------------------------- */
-
-function renderNewsCards(
-  mappedArticles,
-  totalFreshArticles
-) {
+function renderNewsCards(mappedArticles, totalFreshArticles) {
   newsList.innerHTML = "";
 
   if (!mappedArticles.length) {
     newsList.innerHTML = `
       <article class="news-card">
         <h3>No mappable flood stories found</h3>
-
         <p>
-          ${totalFreshArticles} current flood-related
-          ${
-            totalFreshArticles === 1
-              ? "article was"
-              : "articles were"
-          }
-          found, but no clear United States location could
-          be extracted from the available headlines.
+          ${totalFreshArticles} current flood-related ${
+      totalFreshArticles === 1 ? "article was" : "articles were"
+    } found, but no clear U.S. location could be extracted from the available headlines.
         </p>
-
-        <p>
-          The page will check again automatically.
-        </p>
+        <p>The page will check again automatically.</p>
       </article>
     `;
-
     return;
   }
 
@@ -1236,39 +877,23 @@ function renderNewsCards(
     card.className = "news-card";
 
     card.innerHTML = `
-      <span class="badge ${severity.toLowerCase()}">
-        ${escapeHtml(severity)}
-      </span>
-
-      <h3>
-        ${escapeHtml(article.title)}
-      </h3>
-
+      <span class="badge ${severity.toLowerCase()}">${escapeHtml(severity)}</span>
+      <h3>${escapeHtml(article.title)}</h3>
       <p>
         <strong>Mapped location:</strong>
-        ${escapeHtml(
-          formatLocationName(article.location)
-        )}
+        ${escapeHtml(formatLocationName(article.location))}
       </p>
-
       <p>
         <strong>Source:</strong>
         ${escapeHtml(article.domain)}
         <br>
-
         <strong>Published:</strong>
         ${escapeHtml(formatDate(article.date))}
         <br>
-
         <strong>Age:</strong>
-        ${escapeHtml(formatArticleAge(article.date))}
+        ${escapeHtml(formatAge(article.date))}
       </p>
-
-      <a
-        href="${escapeHtml(article.url)}"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
+      <a href="${escapeHtml(article.url)}" target="_blank" rel="noopener noreferrer">
         Read source
       </a>
     `;
@@ -1276,42 +901,26 @@ function renderNewsCards(
     newsList.appendChild(card);
   });
 
-  const updateInformation = document.createElement("p");
-
-  updateInformation.className = "feed-update-information";
-
-  updateInformation.innerHTML = `
+  const updateInfo = document.createElement("p");
+  updateInfo.className = "feed-update-information";
+  updateInfo.innerHTML = `
     <small>
       Showing ${mappedArticles.length} mapped article${
-        mappedArticles.length === 1 ? "" : "s"
-      }
-      from the last ${SETTINGS.articleWindowHours} hours.
-      Last updated:
-      ${escapeHtml(
-        lastSuccessfulUpdate
-          ? formatDate(lastSuccessfulUpdate)
-          : "just now"
+    mappedArticles.length === 1 ? "" : "s"
+  } from the last ${SETTINGS.articleWindowHours} hours.
+      Last updated: ${escapeHtml(
+        lastSuccessfulUpdate ? formatDate(lastSuccessfulUpdate) : "just now"
       )}.
       The feed refreshes every 15 minutes.
     </small>
   `;
 
-  newsList.appendChild(updateInformation);
+  newsList.appendChild(updateInfo);
 }
 
-/* -------------------------------------------------------
-   RENDER COMPLETE RESULTS
-------------------------------------------------------- */
-
-function renderFloodNews(
-  mappedArticles,
-  totalFreshArticles
-) {
+function renderFloodNews(mappedArticles, totalFreshArticles) {
   renderMarkers(mappedArticles);
-  renderNewsCards(
-    mappedArticles,
-    totalFreshArticles
-  );
+  renderNewsCards(mappedArticles, totalFreshArticles);
 
   const bounds = markersLayer.getBounds();
 
@@ -1326,92 +935,70 @@ function renderFloodNews(
 }
 
 /* -------------------------------------------------------
-   LOAD NEWS
+   MAIN LOADER
 ------------------------------------------------------- */
 
 async function loadFloodNews() {
-  if (loading) {
-    return;
-  }
+  if (loading) return;
 
   loading = true;
 
   newsList.innerHTML = `
     <article class="news-card">
       <h3>Loading live flood news</h3>
-
       <p>
-        Searching for current United States flood reports
-        from the last ${SETTINGS.articleWindowHours} hours...
+        Searching for current United States flood reports from the last
+        ${SETTINGS.articleWindowHours} hours...
       </p>
     </article>
   `;
 
   try {
-    const freshArticles =
-      await getCurrentFloodArticles();
+    const freshArticles = await getCurrentFloodArticles();
 
-    const articlesToGeocode =
-      freshArticles.slice(
-        0,
-        SETTINGS.maximumArticlesToGeocode
-      );
+    const articlesToGeocode = freshArticles.slice(
+      0,
+      SETTINGS.maxArticlesToGeocode
+    );
 
-    const geocodedResults =
-      await processWithConcurrency(
-        articlesToGeocode,
-        SETTINGS.geocodeConcurrency,
-        locateArticle
-      );
+    const results = await processWithConcurrency(
+      articlesToGeocode,
+      SETTINGS.geocodeConcurrency,
+      locateArticle
+    );
 
-    const mappedArticles = geocodedResults
+    const mappedArticles = results
       .filter(Boolean)
-      .sort((articleA, articleB) => {
-        return (
-          articleB.date.getTime() -
-          articleA.date.getTime()
-        );
-      })
-      .slice(
-        0,
-        SETTINGS.maximumMappedArticles
-      );
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, SETTINGS.maxMappedArticles);
 
     lastSuccessfulUpdate = new Date();
 
-    renderFloodNews(
-      mappedArticles,
-      freshArticles.length
-    );
+    renderFloodNews(mappedArticles, freshArticles.length);
   } catch (error) {
-    console.error(
-      "FloodWatch loading error:",
-      error
-    );
+    console.error("FloodWatch loading error:", error);
 
     markersLayer.clearLayers();
 
     newsList.innerHTML = `
       <article class="news-card">
         <h3>Unable to load the live flood feed</h3>
-
         <p>
-          ${escapeHtml(
-            error.message ||
-              "The live news service could not be reached."
-          )}
+          ${
+            escapeHtml(error.message) ||
+            "The live news service could not be reached."
+          }
         </p>
-
         <button
           id="retry-flood-news"
           type="button"
           style="
-            margin-top: 10px;
-            padding: 10px 16px;
-            border: 0;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 700;
+            margin-top:10px;
+            padding:10px 16px;
+            border:0;
+            border-radius:8px;
+            cursor:pointer;
+            font-weight:700;
           "
         >
           Try again
@@ -1419,15 +1006,9 @@ async function loadFloodNews() {
       </article>
     `;
 
-    const retryButton = document.getElementById(
-      "retry-flood-news"
-    );
-
+    const retryButton = document.getElementById("retry-flood-news");
     if (retryButton) {
-      retryButton.addEventListener(
-        "click",
-        loadFloodNews
-      );
+      retryButton.addEventListener("click", loadFloodNews);
     }
   } finally {
     loading = false;
@@ -1435,40 +1016,24 @@ async function loadFloodNews() {
 }
 
 /* -------------------------------------------------------
-   INITIAL LOAD AND AUTOMATIC REFRESH
+   STARTUP
 ------------------------------------------------------- */
 
 loadFloodNews();
 
-window.setInterval(
-  loadFloodNews,
-  SETTINGS.refreshIntervalMs
-);
-
-/*
-  Refresh when the user returns to the browser tab,
-  provided the last successful update is older than
-  the configured refresh interval.
-*/
+window.setInterval(loadFloodNews, SETTINGS.refreshIntervalMs);
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState !== "visible") {
-    return;
-  }
+  if (document.visibilityState !== "visible") return;
 
   if (!lastSuccessfulUpdate) {
     loadFloodNews();
     return;
   }
 
-  const timeSinceLastUpdate =
-    Date.now() -
-    lastSuccessfulUpdate.getTime();
+  const age = Date.now() - lastSuccessfulUpdate.getTime();
 
-  if (
-    timeSinceLastUpdate >=
-    SETTINGS.refreshIntervalMs
-  ) {
+  if (age >= SETTINGS.refreshIntervalMs) {
     loadFloodNews();
   }
 });
