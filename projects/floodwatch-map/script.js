@@ -1578,8 +1578,8 @@ function getMarkerStyle(severity) {
 
   return {
     radius: 7,
-    color: "#1e3a8a",
-    fillColor: "#2563eb",
+    color: "#22c55e",
+    fillColor: "#22c55e",
     fillOpacity: 0.86,
     weight: 2
   };
