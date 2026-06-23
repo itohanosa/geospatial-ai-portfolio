@@ -8,15 +8,30 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 const newsList = document.getElementById("news-list");
 const markersLayer = L.layerGroup().addTo(map);
 
+function formatGdeltDate(date) {
+  return date.toISOString().replace(/[-:T]/g, "").slice(0, 14);
+}
+
+const now = new Date();
+const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+const START_DATE = formatGdeltDate(yesterday);
+const END_DATE = formatGdeltDate(now);
+
 const GDELT_URL =
   "https://api.gdeltproject.org/api/v2/geo/geo" +
   "?query=" +
-  encodeURIComponent("(flood OR flooding OR \"flash flood\" OR \"flood warning\" OR \"flood watch\" OR \"coastal flooding\" OR \"river flooding\") sourcecountry:US") +
+  encodeURIComponent(
+    '(flood OR flooding OR "flash flood" OR "flood warning" OR "flood watch" OR "coastal flooding" OR "river flooding") sourcecountry:US'
+  ) +
   "&mode=PointData" +
   "&format=json" +
   "&maxpoints=250" +
   "&geores=2" +
-  "&timespan=24h";
+  "&startdatetime=" +
+  START_DATE +
+  "&enddatetime=" +
+  END_DATE;
 
 function cleanText(value) {
   if (!value) return "";
@@ -57,55 +72,12 @@ function getSeverityClass(severity) {
   return severity.toLowerCase();
 }
 
-function getArticleUrl(item) {
-  if (item.url) return item.url;
-  if (item.URL) return item.URL;
-  if (item.shareurl) return item.shareurl;
-  if (item.articleurl) return item.articleurl;
-  return "#";
-}
-
-function getTitle(item) {
-  return (
-    item.title ||
-    item.name ||
-    item.fullname ||
-    item.location ||
-    item.html ||
-    "Flood-related news location"
-  );
-}
-
-function getLocationName(item) {
-  return (
-    item.name ||
-    item.location ||
-    item.fullname ||
-    item.label ||
-    item.title ||
-    "Mapped location"
-  );
-}
-
 function getLatitude(item) {
-  return Number(
-    item.lat ||
-    item.latitude ||
-    item.Latitude ||
-    item.LAT ||
-    item.latitudedeg
-  );
+  return Number(item.lat || item.latitude || item.Latitude || item.LAT);
 }
 
 function getLongitude(item) {
-  return Number(
-    item.lon ||
-    item.lng ||
-    item.longitude ||
-    item.Longitude ||
-    item.LON ||
-    item.longitudedeg
-  );
+  return Number(item.lon || item.lng || item.longitude || item.Longitude || item.LON);
 }
 
 function normalizeGdeltItems(data) {
@@ -126,7 +98,6 @@ function normalizeGdeltItems(data) {
 
   if (Array.isArray(data.results)) return data.results;
   if (Array.isArray(data.locations)) return data.locations;
-  if (Array.isArray(data.articles)) return data.articles;
 
   return [];
 }
@@ -151,13 +122,31 @@ function renderFloodNews(items) {
       const lat = getLatitude(item);
       const lon = getLongitude(item);
 
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-        return null;
-      }
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
-      const title = cleanText(getTitle(item));
-      const location = cleanText(getLocationName(item));
-      const url = getArticleUrl(item);
+      const title = cleanText(
+        item.title ||
+        item.name ||
+        item.fullname ||
+        item.location ||
+        "Recent flood-related location"
+      );
+
+      const location = cleanText(
+        item.name ||
+        item.location ||
+        item.fullname ||
+        item.label ||
+        "Mapped flood location"
+      );
+
+      const url =
+        item.url ||
+        item.URL ||
+        item.shareurl ||
+        item.articleurl ||
+        "#";
+
       const severity = getSeverity(`${title} ${location}`);
 
       return {
@@ -174,7 +163,7 @@ function renderFloodNews(items) {
 
   if (mappedItems.length === 0) {
     newsList.innerHTML =
-      "<p>No live GDELT flood locations found right now. Try refreshing later.</p>";
+      "<p>No live flood locations found in the last 24 hours. Try refreshing later.</p>";
     return;
   }
 
@@ -204,7 +193,7 @@ function renderFloodNews(items) {
       ${
         item.url !== "#"
           ? `<a href="${item.url}" target="_blank" rel="noopener noreferrer">Read source</a>`
-          : "<p>Source link unavailable from this GDELT point.</p>"
+          : "<p>Source link unavailable.</p>"
       }
     `;
 
@@ -212,21 +201,19 @@ function renderFloodNews(items) {
   });
 
   const bounds = markersLayer.getBounds();
-
   if (bounds.isValid()) {
     map.fitBounds(bounds, { padding: [40, 40] });
   }
 }
 
 async function loadFloodNews() {
-  newsList.innerHTML = "<p>Loading live GDELT flood news map...</p>";
+  newsList.innerHTML = "<p>Loading live flood news from the last 24 hours...</p>";
 
   try {
     const items = await fetchGdeltFloodNews();
     renderFloodNews(items);
   } catch (error) {
     console.error(error);
-
     newsList.innerHTML = `
       <p>Unable to load live GDELT data right now.</p>
       <p>Please refresh the page later.</p>
@@ -235,5 +222,4 @@ async function loadFloodNews() {
 }
 
 loadFloodNews();
-
 setInterval(loadFloodNews, 15 * 60 * 1000);
