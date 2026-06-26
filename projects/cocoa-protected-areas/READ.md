@@ -137,10 +137,6 @@ Results may be affected by the dates, spatial resolution, classification accurac
 
 Regulatory, enforcement, investment, or conservation decisions should incorporate field verification, current administrative information, local knowledge, and other independent evidence.
 
-## My Contribution
-
-I designed the geospatial workflow, integrated the cocoa plantation and protected-area datasets, developed the interactive Google Earth Engine application, and deployed the application as a publicly accessible decision-support tool.
-
 ## Live Application
 
 [Launch the interactive Google Earth Engine application](https://abuitohanosa.users.earthengine.app/view/cocoa-plantations-and-their-implications-on-protected-areas)
