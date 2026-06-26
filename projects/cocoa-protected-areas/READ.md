@@ -1,4 +1,4 @@
-````markdown
+
 # Cocoa Plantations and Protected-Area Monitoring
 
 ## Interactive Geospatial Decision-Support Application
@@ -114,6 +114,7 @@ Maps and spatial indicators can contribute to sustainability reporting, environm
 
 ## Deliverables Demonstrated
 
+- [A scientific publication](https://www.sciencedirect.com/science/article/pii/S1470160X21005288)
 - A publicly deployed Google Earth Engine application
 - Interactive cocoa plantation visualization
 - Protected-area reference mapping
@@ -134,13 +135,6 @@ Regulatory, enforcement, investment, or conservation decisions should incorporat
 ## My Contribution
 
 I designed the geospatial workflow, integrated the cocoa plantation and protected-area datasets, developed the interactive Google Earth Engine application, and deployed the application as a publicly accessible decision-support tool.
-
-## Repository Structure
-
-```text
-cocoa-protected-areas/
-└── README.md
-````
 
 ## Live Application
 
