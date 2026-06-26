@@ -9,7 +9,11 @@ The application demonstrates how satellite-derived geospatial information can su
 
 ## Launch the Live Application
 
-[Open the Cocoa Plantations and Protected Areas application](https://abuitohanosa.users.earthengine.app/view/cocoa-plantations-and-their-implications-on-protected-areas)
+[![Cocoa Plantations and Protected Areas Google Earth Engine application](github_cocoa_app.png)](https://abuitohanosa.users.earthengine.app/view/cocoa-plantations-and-their-implications-on-protected-areas)
+
+**Click the image above to launch the interactive Google Earth Engine application.**
+
+[Open the live application](https://abuitohanosa.users.earthengine.app/view/cocoa-plantations-and-their-implications-on-protected-areas)
 
 ## Decision Problem
 
@@ -114,7 +118,8 @@ Maps and spatial indicators can contribute to sustainability reporting, environm
 
 ## Deliverables Demonstrated
 
-- [A scientific publication](https://www.sciencedirect.com/science/article/pii/S1470160X21005288)
+[![A scientific publication](github_cocoa_paper.png)](https://www.sciencedirect.com/science/article/pii/S1470160X21005288)
+**Click the image above to read the publication.**
 - A publicly deployed Google Earth Engine application
 - Interactive cocoa plantation visualization
 - Protected-area reference mapping
