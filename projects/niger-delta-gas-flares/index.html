@@ -1,0 +1,869 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>
+    Niger Delta Gas Flare Intelligence | Itohan-Osa Abu
+  </title>
+
+  <meta
+    name="description"
+    content="An interactive geospatial intelligence project using satellite observations, environmental data, and web mapping to examine gas flaring and environmental pressure across the Niger Delta."
+  >
+
+  <meta
+    name="keywords"
+    content="Niger Delta gas flaring, remote sensing, GIS, Google Earth Engine, satellite monitoring, environmental intelligence, Nigeria, pollution mapping"
+  >
+
+  <meta name="author" content="Itohan-Osa Abu">
+
+  <link
+    rel="canonical"
+    href="https://itohanosa.github.io/geospatial-ai-portfolio/projects/niger-delta-gas-flares/"
+  >
+
+  <meta
+    property="og:title"
+    content="Niger Delta Gas Flare Intelligence"
+  >
+
+  <meta
+    property="og:description"
+    content="Satellite-based environmental monitoring and interactive geospatial analysis of gas flaring across the Niger Delta."
+  >
+
+  <meta property="og:type" content="website">
+
+  <meta
+    property="og:url"
+    content="https://itohanosa.github.io/geospatial-ai-portfolio/projects/niger-delta-gas-flares/"
+  >
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f4f6f5;
+      color: #1f2933;
+      line-height: 1.7;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .container {
+      width: min(1120px, 92%);
+      margin: 0 auto;
+    }
+
+    nav {
+      background: #07130f;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 16px 0;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+
+    nav .container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 17px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 19px;
+      flex-wrap: wrap;
+    }
+
+    .nav-links a {
+      color: #e5ece8;
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .nav-links a:hover {
+      color: #ffffff;
+      text-decoration: underline;
+    }
+
+    .hero {
+      min-height: 620px;
+      display: flex;
+      align-items: center;
+      color: #ffffff;
+      padding: 95px 0;
+      background:
+        radial-gradient(
+          circle at 82% 35%,
+          rgba(255, 113, 32, 0.55),
+          transparent 23%
+        ),
+        radial-gradient(
+          circle at 74% 70%,
+          rgba(247, 179, 43, 0.22),
+          transparent 25%
+        ),
+        linear-gradient(
+          125deg,
+          #06130e 0%,
+          #0b2c20 48%,
+          #28170e 100%
+        );
+      overflow: hidden;
+      position: relative;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(
+          rgba(255, 255, 255, 0.035) 1px,
+          transparent 1px
+        ),
+        linear-gradient(
+          90deg,
+          rgba(255, 255, 255, 0.035) 1px,
+          transparent 1px
+        );
+      background-size: 48px 48px;
+      pointer-events: none;
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 2;
+      max-width: 850px;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      padding: 7px 13px;
+      margin-bottom: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.55);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 850px;
+      font-size: clamp(42px, 7vw, 76px);
+      line-height: 1.04;
+      letter-spacing: -2px;
+    }
+
+    .hero-description {
+      max-width: 760px;
+      margin: 25px 0 0;
+      color: #e6eee9;
+      font-size: clamp(18px, 2vw, 22px);
+    }
+
+    .buttons {
+      display: flex;
+      gap: 13px;
+      flex-wrap: wrap;
+      margin-top: 33px;
+    }
+
+    .button {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 49px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 800;
+      transition:
+        transform 0.2s ease,
+        opacity 0.2s ease,
+        background 0.2s ease;
+    }
+
+    .button:hover {
+      transform: translateY(-2px);
+      opacity: 0.92;
+    }
+
+    .button.primary {
+      background: #ffffff;
+      color: #10241a;
+    }
+
+    .button.secondary {
+      border: 1px solid rgba(255, 255, 255, 0.8);
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    main {
+      padding: 65px 0 85px;
+    }
+
+    section {
+      margin-bottom: 75px;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      color: #102a1f;
+      font-size: clamp(28px, 4vw, 38px);
+      line-height: 1.2;
+    }
+
+    h3 {
+      margin-top: 0;
+      color: #123326;
+      font-size: 21px;
+    }
+
+    .lead {
+      max-width: 880px;
+      margin: 0;
+      color: #3f4b45;
+      font-size: 19px;
+    }
+
+    .section-heading {
+      max-width: 780px;
+      margin-bottom: 30px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns:
+        repeat(auto-fit, minmax(230px, 1fr));
+      gap: 21px;
+    }
+
+    .card {
+      background: #ffffff;
+      border: 1px solid #dfe6e2;
+      border-radius: 13px;
+      padding: 25px;
+      box-shadow: 0 10px 28px rgba(13, 43, 31, 0.06);
+    }
+
+    .card-number {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      width: 38px;
+      height: 38px;
+      margin-bottom: 16px;
+      border-radius: 50%;
+      background: #e6f0ea;
+      color: #155333;
+      font-weight: 900;
+    }
+
+    .card p {
+      margin-bottom: 0;
+      color: #53615a;
+    }
+
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 25px;
+    }
+
+    .tag {
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: #e5efe9;
+      color: #174f32;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .impact {
+      display: grid;
+      grid-template-columns:
+        repeat(auto-fit, minmax(240px, 1fr));
+      gap: 22px;
+    }
+
+    .impact-card {
+      padding: 27px;
+      border-radius: 13px;
+      background: #102a1f;
+      color: #ffffff;
+    }
+
+    .impact-card h3 {
+      color: #ffffff;
+    }
+
+    .impact-card p {
+      margin-bottom: 0;
+      color: #dce9e2;
+    }
+
+    .image-panel {
+      overflow: hidden;
+      background: #ffffff;
+      border: 1px solid #dce4df;
+      border-radius: 14px;
+      box-shadow: 0 12px 32px rgba(11, 42, 29, 0.1);
+    }
+
+    .image-panel img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .image-caption {
+      margin: 0;
+      padding: 16px 19px;
+      color: #58645e;
+      font-size: 15px;
+    }
+
+    .workflow {
+      counter-reset: workflow;
+      display: grid;
+      gap: 16px;
+      margin-top: 28px;
+    }
+
+    .workflow-item {
+      display: grid;
+      grid-template-columns: 45px 1fr;
+      gap: 17px;
+      align-items: start;
+      padding: 20px;
+      background: #ffffff;
+      border: 1px solid #dce4df;
+      border-radius: 11px;
+    }
+
+    .workflow-number {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 39px;
+      height: 39px;
+      border-radius: 50%;
+      background: #153c2a;
+      color: #ffffff;
+      font-weight: 900;
+    }
+
+    .workflow-item h3 {
+      margin: 2px 0 5px;
+    }
+
+    .workflow-item p {
+      margin: 0;
+      color: #55625b;
+    }
+
+    .cta {
+      padding: 42px;
+      border-radius: 15px;
+      color: #ffffff;
+      background:
+        linear-gradient(
+          120deg,
+          #0c2e20,
+          #244d34
+        );
+    }
+
+    .cta h2 {
+      color: #ffffff;
+    }
+
+    .cta p {
+      max-width: 740px;
+      color: #dce8e1;
+      font-size: 18px;
+    }
+
+    footer {
+      padding: 30px 0;
+      background: #07130f;
+      color: #bdcbc4;
+      text-align: center;
+      font-size: 14px;
+    }
+
+    footer a {
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 700px) {
+      nav {
+        position: static;
+      }
+
+      nav .container {
+        align-items: flex-start;
+      }
+
+      .nav-links {
+        gap: 13px;
+      }
+
+      .hero {
+        min-height: 570px;
+        padding: 70px 0;
+      }
+
+      h1 {
+        letter-spacing: -1px;
+      }
+
+      .buttons {
+        flex-direction: column;
+      }
+
+      .button {
+        width: 100%;
+      }
+
+      main {
+        padding-top: 50px;
+      }
+
+      section {
+        margin-bottom: 60px;
+      }
+
+      .cta {
+        padding: 29px 23px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <nav>
+    <div class="container">
+
+      <a
+        class="brand"
+        href="https://itohanosa.github.io/"
+      >
+        Itohan-Osa Abu
+      </a>
+
+      <div class="nav-links">
+        <a href="#overview">Overview</a>
+        <a href="#capabilities">Capabilities</a>
+        <a href="#workflow">Workflow</a>
+
+        <a
+          href="https://itohanosa.github.io/"
+        >
+          Portfolio
+        </a>
+
+        <a
+          href="mailto:abuitohanosa@gmail.com"
+        >
+          Contact
+        </a>
+      </div>
+
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="container">
+      <div class="hero-content">
+
+        <span class="eyebrow">
+          Satellite Monitoring · Environmental Intelligence
+        </span>
+
+        <h1>
+          Niger Delta Gas Flare Intelligence
+        </h1>
+
+        <p class="hero-description">
+          An interactive geospatial project for exploring gas flaring,
+          environmental pressure, surrounding land cover, and exposed
+          communities across the Niger Delta using satellite observations
+          and web-based spatial analysis.
+        </p>
+
+        <div class="buttons">
+
+          <a
+            class="button primary"
+            href="https://abuitohanosa.users.earthengine.app/view/migraware---the-explorer"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open Live Application
+          </a>
+
+          <a
+            class="button secondary"
+            href="#overview"
+          >
+            Explore the Project
+          </a>
+
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="container">
+
+      <section id="overview">
+
+        <h2>Project Overview</h2>
+
+        <p class="lead">
+          Gas flaring is an important environmental and public-health
+          concern in oil-producing landscapes. This project provides an
+          accessible geospatial interface for investigating the locations
+          of industrial activity, nearby vegetation, settlements, and
+          environmental conditions across the Niger Delta.
+        </p>
+
+        <div class="tags">
+          <span class="tag">Google Earth Engine</span>
+          <span class="tag">Remote Sensing</span>
+          <span class="tag">Gas Flaring</span>
+          <span class="tag">Niger Delta</span>
+          <span class="tag">Environmental Monitoring</span>
+          <span class="tag">Interactive Mapping</span>
+          <span class="tag">Spatial Decision Support</span>
+        </div>
+
+      </section>
+
+      <section id="capabilities">
+
+        <div class="section-heading">
+          <h2>What the Project Demonstrates</h2>
+
+          <p class="lead">
+            The application combines geospatial data, interactive
+            visualization, and environmental context to make complex
+            satellite information easier to explore.
+          </p>
+        </div>
+
+        <div class="grid">
+
+          <article class="card">
+            <div class="card-number">1</div>
+
+            <h3>Industrial-Site Monitoring</h3>
+
+            <p>
+              Examines the locations and spatial distribution of
+              gas-flaring and industrial activity across the study area.
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-number">2</div>
+
+            <h3>Environmental Context</h3>
+
+            <p>
+              Places industrial activity within the surrounding forest,
+              wetland, water, settlement, and land-cover environment.
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-number">3</div>
+
+            <h3>Interactive Exploration</h3>
+
+            <p>
+              Allows users to zoom, inspect map layers, compare locations,
+              and explore environmental patterns through a public-facing
+              web map.
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-number">4</div>
+
+            <h3>Decision Support</h3>
+
+            <p>
+              Communicates geospatial evidence that can support
+              environmental monitoring, research, planning, and
+              community awareness.
+            </p>
+          </article>
+
+        </div>
+
+      </section>
+
+      <!--
+        OPTIONAL SCREENSHOT SECTION
+
+        Upload a screenshot named:
+        niger-delta-app.png
+
+        into the same folder as this index.html file.
+
+        If the screenshot is not present, this entire section
+        automatically hides itself.
+      -->
+
+      <section
+        id="application-preview"
+        style="display: block;"
+      >
+
+        <h2>Interactive Application</h2>
+
+        <div class="image-panel">
+
+          <img
+            src="niger-delta-app.png"
+            alt="Interactive Niger Delta gas flare monitoring application"
+            onerror="
+              document.getElementById(
+                'application-preview'
+              ).style.display='none';
+            "
+          >
+
+          <p class="image-caption">
+            Interactive application for exploring environmental and
+            industrial patterns across the Niger Delta.
+          </p>
+
+        </div>
+
+      </section>
+
+      <section id="workflow">
+
+        <h2>Geospatial Workflow</h2>
+
+        <p class="lead">
+          The project translates satellite and spatial datasets into an
+          accessible environmental intelligence application.
+        </p>
+
+        <div class="workflow">
+
+          <article class="workflow-item">
+            <div class="workflow-number">1</div>
+
+            <div>
+              <h3>Define the Study Area</h3>
+
+              <p>
+                Establish the Niger Delta analysis extent and organize
+                relevant administrative and environmental boundaries.
+              </p>
+            </div>
+          </article>
+
+          <article class="workflow-item">
+            <div class="workflow-number">2</div>
+
+            <div>
+              <h3>Integrate Satellite Data</h3>
+
+              <p>
+                Combine Earth observation, land-cover, forest, water,
+                settlement, and industrial-location information.
+              </p>
+            </div>
+          </article>
+
+          <article class="workflow-item">
+            <div class="workflow-number">3</div>
+
+            <div>
+              <h3>Perform Spatial Analysis</h3>
+
+              <p>
+                Examine the spatial relationship between industrial
+                activity, environmental resources, and nearby populated
+                places.
+              </p>
+            </div>
+          </article>
+
+          <article class="workflow-item">
+            <div class="workflow-number">4</div>
+
+            <div>
+              <h3>Publish the Interactive Map</h3>
+
+              <p>
+                Present the processed information through a web-based
+                interface that researchers, communities, and
+                decision-makers can explore.
+              </p>
+            </div>
+          </article>
+
+        </div>
+
+      </section>
+
+      <section>
+
+        <h2>Potential Applications</h2>
+
+        <div class="impact">
+
+          <article class="impact-card">
+            <h3>Environmental Monitoring</h3>
+
+            <p>
+              Supports visual assessment of industrial pressure and
+              surrounding environmental conditions.
+            </p>
+          </article>
+
+          <article class="impact-card">
+            <h3>Community Awareness</h3>
+
+            <p>
+              Makes spatial information about gas flaring and affected
+              landscapes easier for nontechnical audiences to access.
+            </p>
+          </article>
+
+          <article class="impact-card">
+            <h3>Research and Consulting</h3>
+
+            <p>
+              Demonstrates the use of remote sensing and geographic
+              information systems for environmental intelligence and
+              evidence-based planning.
+            </p>
+          </article>
+
+        </div>
+
+      </section>
+
+      <section class="cta">
+
+        <h2>Explore the Niger Delta Application</h2>
+
+        <p>
+          Open the live application to examine environmental layers,
+          industrial locations, and spatial patterns across the Niger
+          Delta.
+        </p>
+
+        <div class="buttons">
+
+          <a
+            class="button primary"
+            href="https://abuitohanosa.users.earthengine.app/view/migraware---the-explorer"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Launch Live Application
+          </a>
+
+          <a
+            class="button secondary"
+            href="https://github.com/itohanosa/geospatial-ai-portfolio/tree/main/projects/niger-delta-gas-flares"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View Source Files
+          </a>
+
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      © 2026 Itohan-Osa Abu ·
+      <a href="https://itohanosa.github.io/">
+        Geospatial AI Portfolio
+      </a>
+    </div>
+  </footer>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "CreativeWork",
+    "name": "Niger Delta Gas Flare Intelligence",
+    "creator": {
+      "@type": "Person",
+      "name": "Itohan-Osa Abu"
+    },
+    "description": "An interactive satellite-based environmental intelligence project examining gas flaring and environmental conditions across the Niger Delta.",
+    "url": "https://itohanosa.github.io/geospatial-ai-portfolio/projects/niger-delta-gas-flares/",
+    "keywords": [
+      "Niger Delta",
+      "Gas flaring",
+      "Remote sensing",
+      "Google Earth Engine",
+      "Environmental monitoring",
+      "Geospatial intelligence"
+    ]
+  }
+  </script>
+
+</body>
+</html>
+```
