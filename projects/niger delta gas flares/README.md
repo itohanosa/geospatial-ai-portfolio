@@ -9,7 +9,7 @@ An interactive Google Earth Engine application for exploring the spatial distrib
 
 ## Live Application
 
-### [Launch the Gas Flares in the Niger Delta App](https://abuitohanosa.users.earthengine.app/view/gas-flares-in-the-niger-delta)
+### [Launch the Gas Flares in the Niger Delta App](https://abuitohanosa.users.earthengine.app/view/niger-delta-gas-flares)
 
 The application runs directly in a web browser. A Google Earth Engine account is not required to explore the published app.
 
