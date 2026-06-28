@@ -5,7 +5,7 @@ A cloud-connected geospatial risk application for insurance underwriting, catast
 ## Live Application
 
 
-**Application:** `https://itohanosa.github.io/geospatial-ai-portfolio/projects/wildfire-insurance-risk-intelligence/`
+**Application:** `(https://geospatial-ai-portfolio-3o5dmze6m2y4bc4ktk4zep.streamlit.app/)`
 
 ---
 
