@@ -4,9 +4,8 @@ A cloud-connected geospatial risk application for insurance underwriting, catast
 
 ## Live Application
 
-Add the deployed Streamlit link here after deployment:
 
-**Application:** `https://fire-risk.streamlit.app`
+**Application:** `https://itohanosa.github.io/geospatial-ai-portfolio/projects/wildfire-insurance-risk-intelligence/`
 
 ---
 
