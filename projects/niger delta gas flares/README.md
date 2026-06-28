@@ -258,7 +258,7 @@ When referencing the application, use:
 
     Abu, Itohan-Osa. Gas Flares in the Niger Delta:
     An Interactive Google Earth Engine Application.
-    https://abuitohanosa.users.earthengine.app/view/gas-flares-in-the-niger-delta
+    https://abuitohanosa.users.earthengine.app/view/niger-delta-gas-flares
 
 ---
 
