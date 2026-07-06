@@ -39,4 +39,11 @@ Unlike standard benchmarks that only report accuracy, TrustEO evaluates:
 - U-Net
 - DeepLabV3+
 
-## Planned D
+## Planned Datasets
+
+- Sen1Floods11
+- Landsat
+- Sentinel-1
+- Sentinel-2
+- Dynamic World
+- Monitoring Trends in Burn
