@@ -46,4 +46,20 @@ Unlike standard benchmarks that only report accuracy, TrustEO evaluates:
 - Sentinel-1
 - Sentinel-2
 - Dynamic World
-- Monitoring Trends in Burn
+- Monitoring Trends in Burn Severity
+
+## Repository Structure
+
+```text
+TrustEO/
+├── README.md
+├── paper/
+├── data/
+├── notebooks/
+├── src/
+├── configs/
+├── results/
+├── figures/
+├── docs/
+├── requirements.txt
+└── LICENSE
