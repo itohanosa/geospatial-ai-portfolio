@@ -19,13 +19,4 @@ The project will move beyond accuracy-only benchmarking by evaluating:
 - Explanation reliability
 - Robustness across sensors and regions
 - Practical decision-support value
-
-## Expected Output
-
-The project will produce:
-
-1. A reproducible GitHub benchmark
-2. A research manuscript
-3. Example notebooks
-4. Evaluation figures
-5. A postdoctoral research proposal concept
+  
